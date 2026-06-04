@@ -7,7 +7,7 @@
 
 const VERSION = 'v1.0.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
-const GEMINI_MODEL = 'gemini-1.5-flash';
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 const SEED_LIST = [
   'SNDL','CLOV','MVIS','WKHS','GOEV','SPWR','PLUG','FCEL','BLNK','IDEX',
@@ -316,6 +316,22 @@ async function testAlpacaConnection() {
 
 // ── 7. GEMINI API ─────────────────────────────────────────────────
 
+// AQ.* keys (Google AI Studio newer format) use x-goog-api-key header.
+// Legacy AIza* keys use the ?key= query parameter.
+function geminiUrlAndHeaders(key) {
+  const base = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  if (key.startsWith('AQ.')) {
+    return {
+      url: base,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }
+    };
+  }
+  return {
+    url: `${base}?key=${key}`,
+    headers: { 'Content-Type': 'application/json' }
+  };
+}
+
 async function geminiAnalyze(stock) {
   const key = state.settings.geminiKey;
   if (!key) throw new Error('No Gemini key');
@@ -323,10 +339,10 @@ async function geminiAnalyze(stock) {
   if (state.aiCache[stock.ticker]) return state.aiCache[stock.ticker];
 
   const prompt = buildGeminiPrompt(stock);
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+  const { url, headers } = geminiUrlAndHeaders(key);
   const r = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
   });
   if (!r.ok) throw new Error(`Gemini ${r.status}`);
@@ -379,10 +395,10 @@ async function testGeminiConnection() {
   const key = state.settings.geminiKey;
   if (!key) return false;
   try {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+    const { url, headers } = geminiUrlAndHeaders(key);
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({ contents: [{ parts: [{ text: 'Say OK.' }] }] })
     });
     return r.ok;
@@ -1923,7 +1939,7 @@ function renderSettingsTab() {
         <div class="settings-label">Gemini API Key</div>
         <div class="pw-wrap mt4">
           <input id="set-gemini-key" class="settings-input" type="password"
-            placeholder="AIza••••••" value="${s.geminiKey||''}">
+            placeholder="AIza•••• or AQ.••••" value="${s.geminiKey||''}">
           <button class="pw-toggle" onclick="togglePw('set-gemini-key')">👁</button>
         </div>
       </div>
