@@ -96,7 +96,7 @@ function loadState() {
   });
   state.settings = Object.assign({
     alpacaKey: '', alpacaSecret: '', geminiKey: '',
-    budget: 500, includeUnder2: false, showWatch: true, minVolume: 500000
+    budget: 500, includeUnder2: false, showWatch: true, minVolume: 250000
   }, state.settings);
   state.signalToggles = Object.assign(
     { strongBuy: true, softBuy: true, watch: true },
@@ -575,7 +575,7 @@ async function runScreener() {
     const snapshots = await fetchSnapshots(TICKERS);
 
     // 2. Filter price + volume
-    const minVol = state.settings.minVolume || 500000;
+    const minVol = state.settings.minVolume || 250000;
     const minPrice = state.settings.includeUnder2 ? 1 : 1;
     const candidates = Object.entries(snapshots).filter(([, snap]) => {
       const p = snap.dailyBar?.c || snap.latestTrade?.p || 0;
@@ -1776,7 +1776,7 @@ sell warning compliance) that might help me trade better.
 === APP CONFIGURATION AT TIME OF REPORT ===
 Version: ${VERSION}
 Budget: $${state.settings.budget}
-Min Volume Threshold: ${(state.settings.minVolume||500000).toLocaleString()}
+Min Volume Threshold: ${(state.settings.minVolume||250000).toLocaleString()}
 Include Under $2: ${state.settings.includeUnder2?'Yes':'No'}
 Show WATCH signals: ${state.settings.showWatch?'Yes':'No'}
 
@@ -2013,9 +2013,9 @@ function renderSettingsTab() {
       <div class="settings-row" style="flex-direction:column;align-items:stretch;">
         <div class="settings-label">Minimum Volume Threshold</div>
         <div class="segmented mt4">
-          ${[500000,1000000,2000000].map(v =>
-            `<div class="seg-btn ${(s.minVolume||500000)===v?'active':''}"
-              onclick="setMinVol(${v})">${v>=1000000?(v/1000000)+'M':'500K'}</div>`
+          ${[250000,500000,1000000].map(v =>
+            `<div class="seg-btn ${(s.minVolume||250000)===v?'active':''}"
+              onclick="setMinVol(${v})">${v>=1000000?(v/1000000)+'M':v===500000?'500K':'250K'}</div>`
           ).join('')}
         </div>
       </div>
