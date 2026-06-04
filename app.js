@@ -7,7 +7,7 @@
 
 const VERSION = 'v1.0.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
-const GROQ_MODEL = 'llama3-70b-8192';
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
 const SEED_LIST = [
   'SNDL','CLOV','MVIS','WKHS','GOEV','SPWR','PLUG','FCEL','BLNK','IDEX',
