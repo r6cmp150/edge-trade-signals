@@ -80,6 +80,7 @@ let state = {
   lastScanTime: null,
   activeTab: 'signals',
   filters: { priceRange: 'all', duration: 'all' },
+  signalToggles: { strongBuy: true, softBuy: true, watch: true },
   aiCache: {},         // ticker → {bullets, tip} — session only
   portfolioPrices: {}, // ticker → live price — session only
   watchlistScores: {}, // ticker → current score — session only
@@ -89,7 +90,7 @@ let state = {
 };
 
 function loadState() {
-  ['settings','watchlist','portfolio','sold','signals','lastScanTime','news'].forEach(k => {
+  ['settings','watchlist','portfolio','sold','signals','lastScanTime','news','signalToggles'].forEach(k => {
     const raw = localStorage.getItem('edge_' + k);
     if (raw) { try { state[k] = JSON.parse(raw); } catch(e) {} }
   });
@@ -97,6 +98,10 @@ function loadState() {
     alpacaKey: '', alpacaSecret: '', geminiKey: '',
     budget: 500, includeUnder2: false, showWatch: true, minVolume: 500000
   }, state.settings);
+  state.signalToggles = Object.assign(
+    { strongBuy: true, softBuy: true, watch: true },
+    state.signalToggles
+  );
 }
 
 function persist(key) {
@@ -543,7 +548,7 @@ function scoreStock(ticker, snap, bars, newsItem) {
   score = Math.max(0, Math.min(100, score));
   const risk = calcRiskScore(price, atr, rsi, volRatio, hasNegNews);
   const priceRange = price <= 3 ? '$1–$3' : price <= 9 ? '$4–$9' : '$10–$20';
-  const signal = score >= 70 ? 'BUY' : 'WATCH';
+  const signal = score >= 70 ? 'STRONG BUY' : score >= 50 ? 'SOFT BUY' : 'WATCH';
 
   return {
     ticker, company: COMPANY_NAMES[ticker] || ticker,
@@ -608,17 +613,13 @@ async function runScreener() {
     const scored = candidates.map(([ticker, snap]) => {
       const bars = allBars[ticker] || [];
       return scoreStock(ticker, snap, bars, newsMap[ticker] || null);
-    }).filter(s => s && s.score >= 50);
+    }).filter(s => s && s.score >= 20);
 
     // 7. Apply under-$2 filter
     const minP2 = state.settings.includeUnder2 ? 0 : 2;
     const final = scored.filter(s => s.price >= minP2);
 
-    if (!state.settings.showWatch) {
-      state.signals = final.filter(s => s.signal === 'BUY');
-    } else {
-      state.signals = final;
-    }
+    state.signals = final;
 
     state.signals.sort((a,b) => b.score - a.score);
     state.lastScanTime = Date.now();
@@ -710,12 +711,19 @@ function renderSignalsTab() {
       <p>Tap Refresh to run your first scan.</p>
     </div>`;
   } else if (!state.signals.length) {
+    html += `<div class="scan-summary">Market is quiet — no signals above threshold.</div>`;
     html += `<div class="empty-state">
       <div class="empty-icon">🔇</div>
-      <p>Market is quiet right now. No strong signals found. Try refreshing later.</p>
+      <p>Market is quiet right now. Try refreshing later.</p>
       <button class="btn btn-primary" onclick="runScreener()">↻ Refresh</button>
     </div>`;
   } else {
+    const sb  = state.signals.filter(s => s.signal === 'STRONG BUY').length;
+    const sfb = state.signals.filter(s => s.signal === 'SOFT BUY').length;
+    const w   = state.signals.filter(s => s.signal === 'WATCH').length;
+    const total = TICKERS.length;
+    html += `<div class="scan-summary">Scanned ${total} stocks — <span class="ss-strong">${sb} strong buy</span>, <span class="ss-soft">${sfb} soft buy</span>, <span class="ss-watch">${w} watch</span></div>`;
+
     const filtered = getFilteredSignals();
     if (!filtered.length) {
       html += `<div class="empty-state"><p>No signals match current filters.</p></div>`;
@@ -746,7 +754,13 @@ function renderPreMarketSection(movers) {
 function renderFilterButtons() {
   const pf = state.filters.priceRange;
   const df = state.filters.duration;
+  const t  = state.signalToggles;
   return `
+    <div class="filter-row signal-toggle-row">
+      <button class="signal-toggle signal-toggle-strong ${t.strongBuy?'active':''}" onclick="toggleSignal('strongBuy')">STRONG BUY</button>
+      <button class="signal-toggle signal-toggle-soft ${t.softBuy?'active':''}" onclick="toggleSignal('softBuy')">SOFT BUY</button>
+      <button class="signal-toggle signal-toggle-watch ${t.watch?'active':''}" onclick="toggleSignal('watch')">WATCH</button>
+    </div>
     <div class="filter-label">Price Range</div>
     <div class="filter-row">
       ${['all','$1–$3','$4–$9','$10–$20'].map(v =>
@@ -767,8 +781,21 @@ function setFilter(key, val) {
   renderSignalsTab();
 }
 
+function toggleSignal(category) {
+  state.signalToggles[category] = !state.signalToggles[category];
+  persist('signalToggles');
+  renderSignalsTab();
+}
+
+function sigToggleKey(signal) {
+  if (signal === 'STRONG BUY' || signal === 'BUY') return 'strongBuy';
+  if (signal === 'SOFT BUY') return 'softBuy';
+  return 'watch';
+}
+
 function getFilteredSignals() {
   return state.signals.filter(s => {
+    if (!state.signalToggles[sigToggleKey(s.signal)]) return false;
     const { priceRange, duration } = state.filters;
     if (priceRange !== 'all' && s.priceRange !== priceRange) return false;
     if (duration !== 'all' && s.duration !== duration) return false;
@@ -804,13 +831,19 @@ function renderAlpacaError(msg) {
 
 // ── 12. STOCK CARD ────────────────────────────────────────────────
 
+function sigBadgeClass(signal) {
+  if (signal === 'STRONG BUY' || signal === 'BUY') return 'badge-strong-buy';
+  if (signal === 'SOFT BUY') return 'badge-soft-buy';
+  return 'badge-watch';
+}
+
 function renderStockCard(s, marketClosed) {
   const chgSign = s.todayChange >= 0 ? '▲' : '▼';
   const chgCls  = s.todayChange >= 0 ? 'change-pos' : 'change-neg';
   const upside  = ((s.target - s.price) / s.price * 100).toFixed(1);
   const riskCls = s.risk <= 3 ? 'risk-low' : s.risk <= 6 ? 'risk-mid' : 'risk-hi';
   const durBadge = s.duration === 'DAY' ? 'badge-day' : s.duration === '3-DAY' ? 'badge-swing' : 'badge-week';
-  const sigBadge = s.signal === 'BUY' ? 'badge-buy' : 'badge-watch';
+  const sigBadge = sigBadgeClass(s.signal);
   const newsSnip = s.news ? `<div class="card-news">📰 "${(s.news.headline||'').substring(0,70)}…"</div>` : '';
   const overlay  = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
 
@@ -898,7 +931,7 @@ async function openStockModal(ticker) {
     const chgCls  = stock.todayChange >= 0 ? 'change-pos' : 'change-neg';
     const chgSign = stock.todayChange >= 0 ? '▲' : '▼';
     const durBadge = stock.duration === 'DAY' ? 'badge-day' : stock.duration === '3-DAY' ? 'badge-swing' : 'badge-week';
-    const sigBadge = stock.signal === 'BUY' ? 'badge-buy' : 'badge-watch';
+    const sigBadge = sigBadgeClass(stock.signal);
     const riskCls  = stock.risk <= 3 ? 'risk-low' : stock.risk <= 6 ? 'risk-mid' : 'risk-hi';
 
     const rsiLabel = stock.rsi > 75 ? 'Overbought — caution'
@@ -1822,7 +1855,7 @@ Scoring System (0–100 points):
   Above 20-day MA:  10 pts
   Recent news:      0–20 pts (<4hrs=20, 4-12hrs=10, negative=-10)
 
-Labels: 70–100=BUY | 50–69=WATCH | <50=excluded
+Labels: 70–100=STRONG BUY | 50–69=SOFT BUY | 20–49=WATCH | <20=excluded
 
 Risk Score (1–10):
   Base by price tier: $1–$3=6, $4–$9=4, $10–$20=3
@@ -1974,16 +2007,6 @@ function renderSettingsTab() {
         </div>
         <label class="toggle-wrap">
           <input type="checkbox" id="set-under2" ${s.includeUnder2?'checked':''} onchange="savePref('includeUnder2',this.checked)">
-          <span class="toggle-slider"></span>
-        </label>
-      </div>
-      <div class="settings-row">
-        <div>
-          <div class="settings-label">Show WATCH signals</div>
-          <div class="settings-hint">Show both BUY and WATCH results</div>
-        </div>
-        <label class="toggle-wrap">
-          <input type="checkbox" id="set-showwatch" ${s.showWatch!==false?'checked':''} onchange="savePref('showWatch',this.checked)">
           <span class="toggle-slider"></span>
         </label>
       </div>

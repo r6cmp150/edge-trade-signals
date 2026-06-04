@@ -246,6 +246,52 @@ a { color: var(--blue); }
   text-transform: uppercase;
 }
 
+/* ── Signal Toggle Buttons ── */
+.signal-toggle-row { padding: 12px 16px 6px; gap: 8px; }
+.signal-toggle {
+  font-family: var(--cond);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid;
+  letter-spacing: 0.4px;
+  opacity: 0.35;
+  transition: opacity 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.signal-toggle.active { opacity: 1; }
+.signal-toggle-strong {
+  background: rgba(0,255,136,0.1);
+  color: var(--green);
+  border-color: rgba(0,255,136,0.35);
+}
+.signal-toggle-strong.active { background: rgba(0,255,136,0.18); }
+.signal-toggle-soft {
+  background: rgba(255,209,102,0.1);
+  color: var(--yellow);
+  border-color: rgba(255,209,102,0.35);
+}
+.signal-toggle-soft.active { background: rgba(255,209,102,0.18); }
+.signal-toggle-watch {
+  background: rgba(74,96,112,0.1);
+  color: var(--muted);
+  border-color: rgba(74,96,112,0.35);
+}
+.signal-toggle-watch.active { background: rgba(74,96,112,0.2); }
+
+/* ── Scan Summary ── */
+.scan-summary {
+  font-family: var(--cond);
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 4px 16px 10px;
+  letter-spacing: 0.2px;
+}
+.scan-summary .ss-strong { color: var(--green); }
+.scan-summary .ss-soft   { color: var(--yellow); }
+.scan-summary .ss-watch  { color: var(--muted); }
+
 /* ── Stock Card ── */
 .stock-card {
   background: var(--card);
@@ -369,8 +415,10 @@ a { color: var(--blue); }
   align-items: center;
   gap: 3px;
 }
-.badge-buy    { background: rgba(0,255,136,0.15); color: var(--green); border: 1px solid rgba(0,255,136,0.3); }
-.badge-watch  { background: rgba(255,209,102,0.15); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
+.badge-buy         { background: rgba(0,255,136,0.15);  color: var(--green);  border: 1px solid rgba(0,255,136,0.3); }
+.badge-strong-buy  { background: rgba(0,255,136,0.15);  color: var(--green);  border: 1px solid rgba(0,255,136,0.3); }
+.badge-soft-buy    { background: rgba(255,209,102,0.15); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
+.badge-watch       { background: rgba(74,96,112,0.2);    color: var(--muted);  border: 1px solid rgba(74,96,112,0.4); }
 .badge-day    { background: rgba(255,159,67,0.15);  color: var(--orange); border: 1px solid rgba(255,159,67,0.3); }
 .badge-swing  { background: rgba(255,209,102,0.12); color: var(--yellow); border: 1px solid rgba(255,209,102,0.25); }
 .badge-week   { background: rgba(0,180,216,0.12);   color: var(--blue);   border: 1px solid rgba(0,180,216,0.25); }
