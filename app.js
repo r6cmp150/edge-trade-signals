@@ -380,7 +380,7 @@ Stock: ${s.ticker} (${s.company || s.ticker})
 Current Price: $${s.price.toFixed(2)}
 Today's Change: ${s.todayChange.toFixed(2)}%
 RSI (14-day): ${s.rsi.toFixed(1)}
-Volume vs 10-day average: ${s.volumeRatio.toFixed(2)}x
+Volume vs 10-day average: ${s.volRatio.toFixed(2)}x
 Price vs 20-day MA: ${s.price > s.ma20 ? 'ABOVE' : 'BELOW'}
 Signal Score: ${s.score}/100
 Risk Level: ${s.risk}/10
@@ -1161,8 +1161,9 @@ async function loadAIAnalysis(ticker) {
     const result = await groqAnalyze(sig);
     renderAIResult(result);
   } catch(e) {
+    console.error('Groq AI error:', e);
     sec.innerHTML = `<div class="ai-title">AI Analysis</div>
-      <div class="ai-loading" style="color:var(--red)">AI unavailable. Check Groq key in Settings.</div>`;
+      <div class="ai-loading" style="color:var(--red)">AI unavailable — ${e.message}. Check Groq key in Settings.</div>`;
   }
 }
 
