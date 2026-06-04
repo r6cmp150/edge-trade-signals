@@ -84,6 +84,7 @@ let state = {
   aiCache: {},         // ticker → {bullets, tip} — session only
   portfolioPrices: {}, // ticker → live price — session only
   watchlistScores: {}, // ticker → current score — session only
+  ahSnapshots: {},     // ticker → SIP snapshot — session only, AH mode
   soldCurrentPrices: {}, // ticker → current price
   loading: false,
   _confirmCb: null,
@@ -96,7 +97,7 @@ function loadState() {
   });
   state.settings = Object.assign({
     alpacaKey: '', alpacaSecret: '', geminiKey: '',
-    budget: 500, includeUnder2: false, showWatch: true, minVolume: 250000
+    budget: 500, includeUnder2: false, showWatch: true, minVolume: 100000
   }, state.settings);
   state.signalToggles = Object.assign(
     { strongBuy: true, softBuy: true, watch: true },
@@ -190,6 +191,20 @@ function isPreMarketHours() {
   return isTradingDay(pt) && tMin >= 60 && tMin < 390;
 }
 
+function isAfterHoursMode() {
+  return getMarketStatus().status === 'AH';
+}
+
+function getAHData(ticker) {
+  const snap = state.ahSnapshots[ticker];
+  if (!snap) return null;
+  const ahPrice = snap.latestTrade?.p;
+  const regClose = snap.dailyBar?.c;
+  if (!ahPrice || !regClose || ahPrice === regClose) return null;
+  const ahChangePct = ((ahPrice - regClose) / regClose) * 100;
+  return { ahPrice, regClose, ahChangePct };
+}
+
 function updateMarketBanner() {
   const ms = getMarketStatus();
   const el = document.getElementById('market-banner');
@@ -270,6 +285,17 @@ async function fetchSnapshots(tickers) {
   for (const batch of chunk(tickers, 100)) {
     const data = await alpacaGet('/stocks/snapshots', { symbols: batch.join(','), feed:'iex' });
     Object.assign(results, data);
+  }
+  return results;
+}
+
+async function fetchAHSnapshots(tickers) {
+  const results = {};
+  for (const batch of chunk(tickers, 100)) {
+    try {
+      const data = await alpacaGet('/stocks/snapshots', { symbols: batch.join(','), feed:'sip' });
+      Object.assign(results, data);
+    } catch(e) { console.warn('AH snapshot error', e.message); }
   }
   return results;
 }
@@ -575,7 +601,7 @@ async function runScreener() {
     const snapshots = await fetchSnapshots(TICKERS);
 
     // 2. Filter price + volume
-    const minVol = state.settings.minVolume || 250000;
+    const minVol = state.settings.minVolume || 100000;
     const minPrice = state.settings.includeUnder2 ? 1 : 1;
     const candidates = Object.entries(snapshots).filter(([, snap]) => {
       const p = snap.dailyBar?.c || snap.latestTrade?.p || 0;
@@ -626,6 +652,13 @@ async function runScreener() {
     persist('signals'); persist('lastScanTime');
     state.news = newsItems;
     persist('news');
+
+    // Fetch SIP snapshots for after-hours price data when market is in AH window
+    if (isAfterHoursMode() && state.signals.length) {
+      try {
+        state.ahSnapshots = await fetchAHSnapshots(state.signals.map(s => s.ticker));
+      } catch(e) {}
+    }
 
   } catch(err) {
     console.error('Screener error:', err);
@@ -837,6 +870,25 @@ function sigBadgeClass(signal) {
   return 'badge-watch';
 }
 
+function buildAHStrip(ticker) {
+  if (!isAfterHoursMode()) return '';
+  const ah = getAHData(ticker);
+  if (!ah) return '';
+  const { ahPrice, ahChangePct } = ah;
+  const sign = ahChangePct >= 0 ? '+' : '';
+  const cls  = ahChangePct >= 0 ? 'pos' : 'neg';
+  const moverNote = Math.abs(ahChangePct) >= 2
+    ? `<span class="ah-mover">${ahChangePct >= 0 ? '📈' : '📉'} Watch AM open</span>`
+    : '';
+  return `<div class="ah-strip">
+    <span class="ah-label">After Hours</span>
+    <span class="ah-price mono">$${ahPrice.toFixed(2)}</span>
+    <span class="ah-change ${cls}">${sign}${ahChangePct.toFixed(2)}%</span>
+    ${moverNote}
+    <div class="ah-disclaimer">After hours — lower liquidity, wider spreads.</div>
+  </div>`;
+}
+
 function renderStockCard(s, marketClosed) {
   const chgSign = s.todayChange >= 0 ? '▲' : '▼';
   const chgCls  = s.todayChange >= 0 ? 'change-pos' : 'change-neg';
@@ -846,6 +898,7 @@ function renderStockCard(s, marketClosed) {
   const sigBadge = sigBadgeClass(s.signal);
   const newsSnip = s.news ? `<div class="card-news">📰 "${(s.news.headline||'').substring(0,70)}…"</div>` : '';
   const overlay  = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
+  const ahStrip  = buildAHStrip(s.ticker);
 
   return `
     <div class="stock-card" onclick="openStockModal('${s.ticker}')">
@@ -876,6 +929,7 @@ function renderStockCard(s, marketClosed) {
         Stop <span class="mono">$${s.stop.toFixed(2)}</span> · RSI ${s.rsi.toFixed(0)} · ${s.priceRange}
       </div>
       ${newsSnip}
+      ${ahStrip}
     </div>`;
 }
 
@@ -1388,12 +1442,14 @@ async function renderPortfolioTab() {
   const tickers = state.portfolio.map(p => p.ticker);
   let snapshots = {};
   let allBars   = {};
+  let pfAHSnaps = {};
   try {
     if (state.settings.alpacaKey) {
-      [snapshots, allBars] = await Promise.all([
-        fetchSnapshots(tickers),
-        fetchMultiBars(tickers, 100)
-      ]);
+      const fetches = [fetchSnapshots(tickers), fetchMultiBars(tickers, 100)];
+      if (isAfterHoursMode()) fetches.push(fetchAHSnapshots(tickers));
+      const results = await Promise.all(fetches);
+      [snapshots, allBars] = results;
+      if (isAfterHoursMode()) pfAHSnaps = results[2] || {};
     }
   } catch(e) {}
 
@@ -1438,6 +1494,28 @@ async function renderPortfolioTab() {
       ? `<div class="sell-banner sell-soon ${aft?'afternoon-prominent':''}">⚠️ SELL SOON — ${getSellSoonReason(p, currentPrice, rsi, days)}</div>`
       : '';
 
+    // Build AH row for portfolio card
+    let pfAHHtml = '';
+    if (isAfterHoursMode()) {
+      const ahSnap = pfAHSnaps[p.ticker];
+      const ahPrice = ahSnap?.latestTrade?.p;
+      const regClose = ahSnap?.dailyBar?.c || currentPrice;
+      if (ahPrice && ahPrice !== regClose) {
+        const ahChg = ((ahPrice - regClose) / regClose) * 100;
+        const ahSign = ahChg >= 0 ? '+' : '';
+        const ahCls  = ahChg >= 0 ? 'pos' : 'neg';
+        const moverTag = Math.abs(ahChg) >= 2
+          ? `<span class="ah-mover">${ahChg >= 0 ? '📈' : '📉'} Watch AM</span>` : '';
+        pfAHHtml = `<div class="pf-ah-row">
+          <span class="ah-label">After Hours</span>
+          <span class="mono" style="color:var(--yellow)">$${ahPrice.toFixed(2)}</span>
+          <span class="ah-change ${ahCls}">${ahSign}${ahChg.toFixed(2)}%</span>
+          ${moverTag}
+          <div class="ah-disclaimer">After hours — lower liquidity, wider spreads.</div>
+        </div>`;
+      }
+    }
+
     html += `<div class="portfolio-card ${cardCls}">
       <div class="pf-top">
         <div>
@@ -1455,6 +1533,7 @@ async function renderPortfolioTab() {
           <div class="pf-pnl ${pnlCls}" style="font-size:13px">${pnlDollar>=0?'▲':'▼'}${Math.abs(pnlPct).toFixed(1)}%</div>
         </div>
       </div>
+      ${pfAHHtml}
       <div class="card-sub">
         Target $${p.target.toFixed(2)} · Stop $${p.stop.toFixed(2)} · RSI ${rsi.toFixed(0)}
       </div>
@@ -1776,7 +1855,7 @@ sell warning compliance) that might help me trade better.
 === APP CONFIGURATION AT TIME OF REPORT ===
 Version: ${VERSION}
 Budget: $${state.settings.budget}
-Min Volume Threshold: ${(state.settings.minVolume||250000).toLocaleString()}
+Min Volume Threshold: ${(state.settings.minVolume||100000).toLocaleString()}
 Include Under $2: ${state.settings.includeUnder2?'Yes':'No'}
 Show WATCH signals: ${state.settings.showWatch?'Yes':'No'}
 
@@ -2013,9 +2092,9 @@ function renderSettingsTab() {
       <div class="settings-row" style="flex-direction:column;align-items:stretch;">
         <div class="settings-label">Minimum Volume Threshold</div>
         <div class="segmented mt4">
-          ${[250000,500000,1000000].map(v =>
-            `<div class="seg-btn ${(s.minVolume||250000)===v?'active':''}"
-              onclick="setMinVol(${v})">${v>=1000000?(v/1000000)+'M':v===500000?'500K':'250K'}</div>`
+          ${[100000,250000,500000].map(v =>
+            `<div class="seg-btn ${(s.minVolume||100000)===v?'active':''}"
+              onclick="setMinVol(${v})">${v===100000?'100K':v===250000?'250K':'500K+'}</div>`
           ).join('')}
         </div>
       </div>
