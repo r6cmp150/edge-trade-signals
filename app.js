@@ -7,7 +7,7 @@
 
 const VERSION = 'v1.0.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
-const GEMINI_MODEL = 'gemini-2.5-flash';
+const GROQ_MODEL = 'llama3-70b-8192';
 
 const SEED_LIST = [
   'SNDL','CLOV','MVIS','WKHS','GOEV','SPWR','PLUG','FCEL','BLNK','IDEX',
@@ -96,7 +96,7 @@ function loadState() {
     if (raw) { try { state[k] = JSON.parse(raw); } catch(e) {} }
   });
   state.settings = Object.assign({
-    alpacaKey: '', alpacaSecret: '', geminiKey: '',
+    alpacaKey: '', alpacaSecret: '', groqKey: '',
     budget: 500, includeUnder2: false, showWatch: true, minVolume: 100000
   }, state.settings);
   state.signalToggles = Object.assign(
@@ -345,47 +345,35 @@ async function testAlpacaConnection() {
   } catch(e) { return false; }
 }
 
-// ── 7. GEMINI API ─────────────────────────────────────────────────
+// ── 7. GROQ API ───────────────────────────────────────────────────
 
-// AQ.* keys (Google AI Studio newer format) use x-goog-api-key header.
-// Legacy AIza* keys use the ?key= query parameter.
-function geminiUrlAndHeaders(key) {
-  const base = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-  if (key.startsWith('AQ.')) {
-    return {
-      url: base,
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }
-    };
-  }
-  return {
-    url: `${base}?key=${key}`,
-    headers: { 'Content-Type': 'application/json' }
-  };
-}
-
-async function geminiAnalyze(stock) {
-  const key = state.settings.geminiKey;
-  if (!key) throw new Error('No Gemini key');
+async function groqAnalyze(stock) {
+  const key = state.settings.groqKey;
+  if (!key) throw new Error('No Groq key');
 
   if (state.aiCache[stock.ticker]) return state.aiCache[stock.ticker];
 
-  const prompt = buildGeminiPrompt(stock);
-  const { url, headers } = geminiUrlAndHeaders(key);
-  const r = await fetch(url, {
+  const prompt = buildAIPrompt(stock);
+  const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers,
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0.7,
+      max_tokens: 512
+    })
   });
-  if (!r.ok) throw new Error(`Gemini ${r.status}`);
+  if (!r.ok) throw new Error(`Groq ${r.status}`);
   const data = await r.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  const text = data.choices?.[0]?.message?.content || '';
 
-  const result = parseGeminiResponse(text);
+  const result = parseAIResponse(text);
   state.aiCache[stock.ticker] = result;
   return result;
 }
 
-function buildGeminiPrompt(s) {
+function buildAIPrompt(s) {
   return `You are a short-term trading analyst. A retail investor is considering this trade:
 
 Stock: ${s.ticker} (${s.company || s.ticker})
@@ -404,7 +392,7 @@ Entry: $${s.entry.toFixed(2)} | Target: $${s.target.toFixed(2)} | Stop-loss: $${
 Write exactly 3 bullet points (1–2 sentences each) explaining what makes this stock worth buying right now based on the data above. Then write one "Strategy Tip" — a specific, actionable sentence telling the investor exactly how to manage this trade for the ${s.duration === 'DAY' ? 'DAY TRADE' : s.duration === '3-DAY' ? '3-DAY SWING' : 'WEEK TRADE'} timeframe to maximize profit. Be direct and specific. No disclaimers.`;
 }
 
-function parseGeminiResponse(text) {
+function parseAIResponse(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const bullets = [];
   let tip = '';
@@ -422,15 +410,18 @@ function parseGeminiResponse(text) {
   return { bullets: bullets.slice(0, 3), tip };
 }
 
-async function testGeminiConnection() {
-  const key = state.settings.geminiKey;
+async function testGroqConnection() {
+  const key = state.settings.groqKey;
   if (!key) return false;
   try {
-    const { url, headers } = geminiUrlAndHeaders(key);
-    const r = await fetch(url, {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers,
-      body: JSON.stringify({ contents: [{ parts: [{ text: 'Say OK.' }] }] })
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [{ role: 'user', content: 'Say OK.' }],
+        max_tokens: 5
+      })
     });
     return r.ok;
   } catch(e) { return false; }
@@ -847,7 +838,7 @@ function renderNoKeys() {
   document.getElementById('tab-content').innerHTML = `
     <div class="empty-state">
       <div class="empty-icon">🔑</div>
-      <p>Welcome to EDGE.<br>Go to Settings to add your Alpaca and Gemini API keys to get started.</p>
+      <p>Welcome to EDGE.<br>Go to Settings to add your Alpaca and Groq API keys to get started.</p>
       <button class="btn btn-primary" onclick="switchTab('settings')">Open Settings</button>
     </div>`;
 }
@@ -1071,7 +1062,7 @@ async function openStockModal(ticker) {
       </div>` : ''}
 
       <div class="ai-section" id="ai-section">
-        <div class="ai-title">AI Analysis <span style="font-size:10px;color:var(--muted)">(Gemini)</span></div>
+        <div class="ai-title">AI Analysis <span style="font-size:10px;color:var(--muted)">(Groq)</span></div>
         <button class="btn btn-sm btn-primary" onclick="loadAIAnalysis('${ticker}')">Get AI Analysis</button>
       </div>
     `;
@@ -1164,21 +1155,21 @@ async function loadAIAnalysis(ticker) {
 
   const sec = document.getElementById('ai-section');
   if (!sec) return;
-  sec.innerHTML = `<div class="ai-title">AI Analysis</div><div class="ai-loading"><span class="spinner"></span> Analyzing with Gemini…</div>`;
+  sec.innerHTML = `<div class="ai-title">AI Analysis</div><div class="ai-loading"><span class="spinner"></span> Analyzing with Groq…</div>`;
 
   try {
-    const result = await geminiAnalyze(sig);
+    const result = await groqAnalyze(sig);
     renderAIResult(result);
   } catch(e) {
     sec.innerHTML = `<div class="ai-title">AI Analysis</div>
-      <div class="ai-loading" style="color:var(--red)">AI unavailable. Check Gemini key in Settings.</div>`;
+      <div class="ai-loading" style="color:var(--red)">AI unavailable. Check Groq key in Settings.</div>`;
   }
 }
 
 function renderAIResult(result) {
   const sec = document.getElementById('ai-section');
   if (!sec) return;
-  let html = `<div class="ai-title">AI Analysis <span style="font-size:10px;color:var(--muted)">(Gemini)</span></div>`;
+  let html = `<div class="ai-title">AI Analysis <span style="font-size:10px;color:var(--muted)">(Groq)</span></div>`;
   result.bullets.forEach(b => { html += `<div class="ai-bullet">• ${b}</div>`; });
   if (result.tip) html += `<div class="ai-tip"><strong>Strategy Tip:</strong> ${result.tip}</div>`;
   sec.innerHTML = html;
@@ -2048,11 +2039,11 @@ function renderSettingsTab() {
         </div>
       </div>
       <div class="settings-row" style="flex-direction:column;align-items:stretch;">
-        <div class="settings-label">Gemini API Key</div>
+        <div class="settings-label">Groq API Key</div>
         <div class="pw-wrap mt4">
-          <input id="set-gemini-key" class="settings-input" type="password"
-            placeholder="AIza•••• or AQ.••••" value="${s.geminiKey||''}">
-          <button class="pw-toggle" onclick="togglePw('set-gemini-key')">👁</button>
+          <input id="set-groq-key" class="settings-input" type="password"
+            placeholder="gsk_••••••••" value="${s.groqKey||''}">
+          <button class="pw-toggle" onclick="togglePw('set-groq-key')">👁</button>
         </div>
       </div>
       <div class="settings-row">
@@ -2114,7 +2105,7 @@ function renderSettingsTab() {
 
     <div class="app-version">EDGE Trade Signals ${VERSION}<br>
       <a href="https://alpaca.markets" target="_blank">Get Alpaca Keys</a> ·
-      <a href="https://aistudio.google.com" target="_blank">Get Gemini Key</a>
+      <a href="https://console.groq.com/keys" target="_blank">Get Groq Key</a>
     </div>
   `;
 }
@@ -2127,7 +2118,7 @@ function togglePw(id) {
 function saveApiKeys() {
   state.settings.alpacaKey    = document.getElementById('set-alpaca-key')?.value.trim() || '';
   state.settings.alpacaSecret = document.getElementById('set-alpaca-secret')?.value.trim() || '';
-  state.settings.geminiKey    = document.getElementById('set-gemini-key')?.value.trim() || '';
+  state.settings.groqKey      = document.getElementById('set-groq-key')?.value.trim() || '';
   persist('settings');
   alert('API keys saved.');
 }
@@ -2158,13 +2149,13 @@ async function testConnections() {
   // Save keys first
   state.settings.alpacaKey    = document.getElementById('set-alpaca-key')?.value.trim() || state.settings.alpacaKey;
   state.settings.alpacaSecret = document.getElementById('set-alpaca-secret')?.value.trim() || state.settings.alpacaSecret;
-  state.settings.geminiKey    = document.getElementById('set-gemini-key')?.value.trim() || state.settings.geminiKey;
+  state.settings.groqKey      = document.getElementById('set-groq-key')?.value.trim() || state.settings.groqKey;
   persist('settings');
 
-  const [alpOk, gemOk] = await Promise.all([testAlpacaConnection(), testGeminiConnection()]);
+  const [alpOk, groqOk] = await Promise.all([testAlpacaConnection(), testGroqConnection()]);
   el.innerHTML = `<div class="test-result">
     <span class="${alpOk?'test-ok':'test-err'}">${alpOk?'✓':'✗'} Alpaca ${alpOk?'connected':'failed'}</span>
-    <span class="${gemOk?'test-ok':'test-err'}">${gemOk?'✓':'✗'} Gemini ${gemOk?'connected':'failed'}</span>
+    <span class="${groqOk?'test-ok':'test-err'}">${groqOk?'✓':'✗'} Groq ${groqOk?'connected':'failed'}</span>
   </div>`;
 }
 
@@ -2172,7 +2163,7 @@ function exportAllData() {
   const data = {
     version: VERSION,
     exported: new Date().toISOString(),
-    settings: { ...state.settings, alpacaKey:'[REDACTED]', alpacaSecret:'[REDACTED]', geminiKey:'[REDACTED]' },
+    settings: { ...state.settings, alpacaKey:'[REDACTED]', alpacaSecret:'[REDACTED]', groqKey:'[REDACTED]' },
     watchlist: state.watchlist,
     portfolio: state.portfolio,
     sold: state.sold,
