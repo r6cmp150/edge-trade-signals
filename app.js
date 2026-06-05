@@ -562,6 +562,33 @@ function scoreStock(ticker, snap, bars, newsItem) {
     }
   }
 
+  // Volume Build: 3 consecutive days of rising volume + today >= 1.3x avg (0–15)
+  let volBuild = false;
+  if (vols.length >= 4 && volRatio >= 1.3) {
+    const n = vols.length;
+    if (vols[n-1] > vols[n-2] && vols[n-2] > vols[n-3]) {
+      volBuild = true;
+      score += 15;
+    }
+  }
+
+  // Mean Reversion: price 8–15% below 20MA, RSI < 45 and turning up (0–20)
+  let meanReversion = false;
+  const maPct = ma20 > 0 ? ((price - ma20) / ma20) * 100 : 0;
+  if (maPct <= -8 && maPct >= -15 && rsi < 45 && closes.length >= 17) {
+    const rsi2ago = calcRSI(closes.slice(0, -2));
+    if (rsi > rsi2ago) {
+      meanReversion = true;
+      score += 20;
+    }
+  }
+
+  const signalsFired = [];
+  if (volBuild) signalsFired.push('VOL_BUILD');
+  if (meanReversion) signalsFired.push('MEAN_REVERSION');
+
+  const volTrend = volBuild ? 'building' : volRatio >= 1.5 ? 'spike' : 'normal';
+
   score = Math.max(0, Math.min(100, score));
   const risk = calcRiskScore(price, atr, rsi, volRatio, hasNegNews);
   const priceRange = price <= 3 ? '$1–$3' : price <= 9 ? '$4–$9' : '$10–$20';
@@ -572,6 +599,7 @@ function scoreStock(ticker, snap, bars, newsItem) {
     price, prevClose, todayChange, volume, volRatio,
     rsi, atr, ma20, duration, entry, target, stop,
     score, risk, signal, priceRange, news: newsItem, hasNegNews,
+    volBuild, meanReversion, maPct, volTrend, signalsFired,
     bars: sorted
   };
 }
@@ -890,6 +918,11 @@ function renderStockCard(s, marketClosed) {
   const newsSnip = s.news ? `<div class="card-news">📰 "${(s.news.headline||'').substring(0,70)}…"</div>` : '';
   const overlay  = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
   const ahStrip  = buildAHStrip(s.ticker);
+  const sigBadges = (s.volBuild || s.meanReversion) ? `
+    <div class="signal-extra-badges">
+      ${s.volBuild      ? '<span class="badge badge-vol-build">VOL BUILD</span>' : ''}
+      ${s.meanReversion ? '<span class="badge badge-reversal">REVERSAL</span>'  : ''}
+    </div>` : '';
 
   return `
     <div class="stock-card" onclick="openStockModal('${s.ticker}')">
@@ -910,6 +943,7 @@ function renderStockCard(s, marketClosed) {
         <span class="risk-pill ${riskCls}">Risk: ${s.risk}/10</span>
         <span class="vol-chip">${s.volRatio.toFixed(1)}× vol</span>
       </div>
+      ${sigBadges}
       <div class="card-divider"></div>
       <div class="card-levels">
         <span>Entry <span class="mono">$${s.entry.toFixed(2)}</span></span>
@@ -1046,8 +1080,20 @@ async function openStockModal(ticker) {
       </div>
       <div class="signal-row">
         <span class="signal-key">vs 20-day MA</span>
-        <span class="signal-val">${stock.price > stock.ma20 ? '✓ Above' : '✗ Below'}</span>
+        <span class="signal-val">${stock.price > stock.ma20 ? '✓ Above' : '✗ Below'} ${stock.maPct != null ? '(' + (stock.maPct >= 0 ? '+' : '') + stock.maPct.toFixed(1) + '%)' : ''}</span>
       </div>
+      <div class="signal-row">
+        <span class="signal-key">Volume Trend</span>
+        <span class="signal-val">${
+          (stock.volTrend || 'normal') === 'building' ? '📈 Building (3 days)' :
+          (stock.volTrend || 'normal') === 'spike'    ? '⚡ Spike (today only)' :
+                                                         'Normal'
+        }</span>
+      </div>
+      ${stock.meanReversion ? `<div class="signal-row">
+        <span class="signal-key">Mean Reversion</span>
+        <span class="signal-val" style="color:var(--purple);font-size:11px;max-width:60%;text-align:right">Oversold bounce setup — price significantly below average and momentum turning up</span>
+      </div>` : ''}
       <div class="signal-row">
         <span class="signal-key">Duration</span>
         <span class="signal-val">${stock.duration} — ${durWhy}</span>
@@ -1388,11 +1434,12 @@ function confirmAddPortfolio(ticker) {
     target:   sig?.target || price * 1.10,
     stop:     sig?.stop   || price * 0.92,
     duration: sig?.duration || '3-DAY',
-    scoreAtBuy:  sig?.score || 0,
-    rsiAtBuy:    sig?.rsi   || 0,
-    volRatioAtBuy: sig?.volRatio || 0,
-    riskAtBuy:   sig?.risk  || 5,
-    newsAtBuy:   sig?.news?.headline || '',
+    scoreAtBuy:      sig?.score || 0,
+    rsiAtBuy:        sig?.rsi   || 0,
+    volRatioAtBuy:   sig?.volRatio || 0,
+    riskAtBuy:       sig?.risk  || 5,
+    newsAtBuy:       sig?.news?.headline || '',
+    signalsFiredAtBuy: sig?.signalsFired || [],
     peakPrice:   price,
   };
 
@@ -1672,6 +1719,7 @@ function confirmMarkSold(posId) {
     volRatioAtBuy: pos.volRatioAtBuy,
     riskAtBuy: pos.riskAtBuy,
     newsAtBuy: pos.newsAtBuy,
+    signalsFiredAtBuy: pos.signalsFiredAtBuy || [],
     duration: pos.duration,
     priceRange: salePrice <= 3 ? '$1–$3' : salePrice <= 9 ? '$4–$9' : '$10–$20',
     sellWarningAtSale: currentWarn,
@@ -1877,6 +1925,17 @@ Sell warning compliance:
   Trades where SELL SOON was showing at sale: ${sellSoonCount}
   Trades where HOLDING was showing at sale: ${holdingCount}
 
+Performance by signal type at purchase:
+  VOL BUILD signal fired:
+    Trades: ${sold.filter(s=>(s.signalsFiredAtBuy||[]).includes('VOL_BUILD')).length}
+    Win rate: ${(()=>{const t=sold.filter(s=>(s.signalsFiredAtBuy||[]).includes('VOL_BUILD'));return t.length?((t.filter(s=>s.pnlPct>0).length/t.length*100).toFixed(0)+'%'):'N/A';})()}
+  MEAN REVERSION signal fired:
+    Trades: ${sold.filter(s=>(s.signalsFiredAtBuy||[]).includes('MEAN_REVERSION')).length}
+    Win rate: ${(()=>{const t=sold.filter(s=>(s.signalsFiredAtBuy||[]).includes('MEAN_REVERSION'));return t.length?((t.filter(s=>s.pnlPct>0).length/t.length*100).toFixed(0)+'%'):'N/A';})()}
+  Neither special signal:
+    Trades: ${sold.filter(s=>!(s.signalsFiredAtBuy||[]).length).length}
+    Win rate: ${(()=>{const t=sold.filter(s=>!(s.signalsFiredAtBuy||[]).length);return t.length?((t.filter(s=>s.pnlPct>0).length/t.length*100).toFixed(0)+'%'):'N/A';})()}
+
 Performance by price tier:
   ${tierStats(1,3,'$1–$3')}
   ${tierStats(4,9,'$4–$9')}
@@ -1906,6 +1965,7 @@ Performance by signal score at purchase:
   Result: ${s.pnlDollar>=0?'WIN':'LOSS'} $${s.pnlDollar.toFixed(2)} (${s.pnlPct.toFixed(1)}%)
   Source: ${s.source}
   Signal score at purchase: ${s.scoreAtBuy}/100
+  Signals fired at purchase: ${(s.signalsFiredAtBuy||[]).length ? s.signalsFiredAtBuy.join(', ') : 'none'}
   RSI at purchase: ${s.rsiAtBuy?.toFixed(1)||'N/A'}
   Volume ratio at purchase: ${s.volRatioAtBuy?.toFixed(2)||'N/A'}x
   Risk score at purchase: ${s.riskAtBuy||'N/A'}/10
@@ -1919,12 +1979,14 @@ Performance by signal score at purchase:
 
   report += `=== CURRENT SCORING FORMULA (for Claude's reference) ===
 
-Scoring System (0–100 points):
+Scoring System (0–100 points, capped at 100):
   Volume spike:     0–30 pts (1.5x=10, 2x=20, 3x+=30)
+  Volume build:     0–15 pts (3 consecutive days rising + today >=1.3x avg)
   Price momentum:   0–20 pts (2-4%=10, 4%+=20)
   RSI position:     0–20 pts (50-65=20, 65-75=10, <45 rising=15)
   Above 20-day MA:  10 pts
   Recent news:      0–20 pts (<4hrs=20, 4-12hrs=10, negative=-10)
+  Mean reversion:   0–20 pts (price 8-15% below MA, RSI<45, RSI turning up)
 
 Labels: 70–100=STRONG BUY | 50–69=SOFT BUY | 20–49=WATCH | <20=excluded
 
@@ -2089,6 +2151,23 @@ function renderSettingsTab() {
               onclick="setMinVol(${v})">${v===100000?'100K':v===250000?'250K':'500K+'}</div>`
           ).join('')}
         </div>
+      </div>
+    </div>
+
+    <div class="settings-section mt12">
+      <div class="settings-section-title">Scoring Formula</div>
+      <div class="score-table">
+        <div class="score-row"><span>Volume spike (1.5–3×+)</span><span>0–30 pts</span></div>
+        <div class="score-row"><span>Volume build (3-day rise)</span><span>+15 pts</span></div>
+        <div class="score-row"><span>Price momentum (2–4%+)</span><span>0–20 pts</span></div>
+        <div class="score-row"><span>RSI position</span><span>0–20 pts</span></div>
+        <div class="score-row"><span>Above 20-day MA</span><span>+10 pts</span></div>
+        <div class="score-row"><span>Recent news boost</span><span>0–20 pts</span></div>
+        <div class="score-row"><span>Mean reversion setup</span><span>+20 pts</span></div>
+        <div class="score-row score-row-total"><span>Total (capped)</span><span>100 pts</span></div>
+        <div class="score-row"><span class="score-label-strong">STRONG BUY</span><span>70–100</span></div>
+        <div class="score-row"><span class="score-label-soft">SOFT BUY</span><span>50–69</span></div>
+        <div class="score-row"><span class="score-label-watch">WATCH</span><span>20–49</span></div>
       </div>
     </div>
 
