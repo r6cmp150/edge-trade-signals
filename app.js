@@ -9,7 +9,7 @@ const VERSION = 'v1.0.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
-// ── CORE LIST — scanned on every regular Refresh (500 tickers) ───────
+// ── MASTER TICKERS — full list scanned on every Refresh ──────────────
 const CORE_TICKERS = [...new Set([
   // Original screener tickers
   'SNDL','CLOV','MVIS','WKHS','GOEV','SPWR','PLUG','FCEL','BLNK','IDEX',
@@ -90,7 +90,7 @@ const CORE_TICKERS = [...new Set([
   'PTGX','PULM','PRTK','PTCT','AQMS','ARAV','AREC','ARKO','ARNC','ARR',
 ])];
 
-// ── EXTENDED LIST — New Batch pulls 500 random from here (1000 tickers) ─
+// ── EXTENDED TICKERS — merged with CORE into MASTER_TICKERS below ────────
 const EXTENDED_TICKERS = [...new Set([
   // Biotech / Pharma — Extended
   'ACAD','AGIO','AGTC','AKRO','ALEC','ALGS','ALKS','ALLK','ALNY','ALPN',
@@ -225,9 +225,19 @@ const EXTENDED_TICKERS = [...new Set([
   'STFS','STGW','STHO','STIM','STIX','STJM','STKS','STLD','STNE','STNG',
   'STRM','STRO','STRS','STRT','STRW','STWO','STXB','STXS','STYD','STZA',
   'GRPN','SKLZ',
+  // Additional verified tickers — specialty/mixed sectors
+  'ACLS','TREX','TILE','COUR','LAUR','CSV','MATW','FOXF','VITL','HYFM',
+  'LNN','AGFS','VERA','VERV','VNDA','VOXX','YMAB','ZFOX','ZAGG','RVLV',
+  'SMSI','KNSA','SELB','SEER','SERA','RLAY','XOMA','XNCR','XTNT','XXII',
+  'ZNTL','YTRA','DCBO','DCTH','DFIN','DLHC','DLPN','AMRX','ALPP','ZUMZ',
+  'LOPE','LKFN','LIVN','LOAN','LOCO','LOGI','LOMA','LXRX','LYEL','LZMO',
+  'MFAC','MFIN','MGYR','MGTX','MIGI','MIND','MINM','MIRN','MITT','MJCO',
+  'MKFG','MKSI','MKTX','MLCO','MLNK','MLVF','MMAT','MMBI','MMEX','MMSI',
+  'MODD','MODN','MOFG','MOGO','MOLN','MOMO','MORF','MORN','MOTS','MOTV',
 ])]
 
-let TICKERS = CORE_TICKERS;
+const MASTER_TICKERS = [...new Set([...CORE_TICKERS, ...EXTENDED_TICKERS])];
+let TICKERS = MASTER_TICKERS;
 
 const COMPANY_NAMES = {
   'SNDL':'SNDL Inc.','CLOV':'Clover Health','MVIS':'MicroVision','WKHS':'Workhorse Group',
@@ -295,7 +305,6 @@ let state = {
   _confirmCb: null,
   masterList: [],
   masterListUpdated: null,
-  batchMode: false,
 };
 
 function loadState() {
@@ -314,7 +323,7 @@ function loadState() {
   if (state.masterList && state.masterList.length) {
     TICKERS = state.masterList;
   } else {
-    TICKERS = CORE_TICKERS;
+    TICKERS = MASTER_TICKERS;
   }
 }
 
@@ -465,7 +474,7 @@ async function refreshMasterList() {
 
   try {
     const currentList = (state.masterList && state.masterList.length)
-      ? state.masterList : CORE_TICKERS;
+      ? state.masterList : MASTER_TICKERS;
 
     // 1. Fetch snapshots to identify stale tickers (no activity in 30 days)
     const snapshots = await fetchSnapshots(currentList);
@@ -620,11 +629,14 @@ function chunk(arr, n) {
   return out;
 }
 
-async function fetchSnapshots(tickers) {
+async function fetchSnapshots(tickers, onProgress) {
   const results = {};
+  let done = 0;
   for (const batch of chunk(tickers, 100)) {
     const data = await alpacaGet('/stocks/snapshots', { symbols: batch.join(','), feed:'iex' });
     Object.assign(results, data);
+    done += batch.length;
+    if (onProgress) onProgress(done, tickers.length);
   }
   return results;
 }
@@ -957,7 +969,7 @@ async function runScreener() {
 
   try {
     // 1. Batch snapshots
-    const snapshots = await fetchSnapshots(TICKERS);
+    const snapshots = await fetchSnapshots(TICKERS, updateScanProgress);
 
     // 2. Filter price + volume
     const minVol = state.settings.minVolume || 100000;
@@ -1050,20 +1062,12 @@ function setRefreshSpinning(on) {
 
 function handleRefresh() {
   if (state.activeTab === 'signals') {
-    TICKERS = state.masterList && state.masterList.length ? state.masterList : CORE_TICKERS;
-    state.batchMode = false;
+    TICKERS = state.masterList && state.masterList.length ? state.masterList : MASTER_TICKERS;
     runScreener();
   }
   else if (state.activeTab === 'news') fetchAndRenderNews();
   else if (state.activeTab === 'portfolio') renderPortfolioTab();
   else if (state.activeTab === 'watchlist') renderWatchlistTab();
-}
-
-async function runBatchScreener() {
-  const shuffled = [...EXTENDED_TICKERS].sort(() => Math.random() - 0.5);
-  TICKERS = shuffled.slice(0, 500);
-  state.batchMode = true;
-  await runScreener();
 }
 
 // ── 11. SIGNALS TAB ───────────────────────────────────────────────
@@ -1076,15 +1080,12 @@ function renderSignalsTab() {
 
   const ms = getMarketStatus();
   const aft = isAfternoonMode();
-  const title = state.batchMode ? 'BATCH SCAN' : (aft ? 'AFTERNOON REVIEW' : 'MORNING SCAN');
+  const title = aft ? 'AFTERNOON REVIEW' : 'MORNING SCAN';
 
   let html = `
     <div class="tab-header">
       <h1 class="tab-title">${title}</h1>
-      <div style="display:flex;gap:6px;align-items:center">
-        <button class="btn btn-sm btn-ghost" onclick="runBatchScreener()" title="Scan 500 random extended tickers">New Batch</button>
-        <button class="btn btn-sm btn-primary" onclick="handleRefresh()">↻ Refresh</button>
-      </div>
+      <button class="btn btn-sm btn-primary" onclick="handleRefresh()">↻ Refresh</button>
     </div>
     ${getFreshnessHtml()}
   `;
@@ -1211,9 +1212,22 @@ function getFilteredSignals() {
 
 function renderSkeletons() {
   const container = document.getElementById('tab-content');
-  let html = `<div class="tab-header"><h1 class="tab-title">SCANNING MARKET…</h1></div>`;
+  let html = `
+    <div class="tab-header"><h1 class="tab-title">SCANNING MARKET…</h1></div>
+    <div class="scan-progress">
+      <span id="scan-progress-text">Scanning… 0 / ${TICKERS.length.toLocaleString()} stocks</span>
+      <div class="scan-progress-track"><div id="scan-progress-bar" class="scan-progress-bar" style="width:0%"></div></div>
+    </div>
+  `;
   for (let i = 0; i < 5; i++) html += `<div class="skel-card skeleton"></div>`;
   container.innerHTML = html;
+}
+
+function updateScanProgress(done, total) {
+  const txt = document.getElementById('scan-progress-text');
+  const bar = document.getElementById('scan-progress-bar');
+  if (txt) txt.textContent = `Scanning… ${done.toLocaleString()} / ${total.toLocaleString()} stocks`;
+  if (bar) bar.style.width = `${Math.round((done / total) * 100)}%`;
 }
 
 function renderNoKeys() {
@@ -2530,7 +2544,7 @@ function renderSettingsTab() {
       <div class="settings-row">
         <div>
           <div class="settings-label">Ticker Coverage</div>
-          <div class="settings-hint">Core list: ${CORE_TICKERS.length} | Extended list: ${EXTENDED_TICKERS.length} | Total coverage: ${CORE_TICKERS.length + EXTENDED_TICKERS.length}</div>
+          <div class="settings-hint">Master list: ${MASTER_TICKERS.length} tickers — all scanned on every Refresh</div>
         </div>
       </div>
       <div class="settings-row">
@@ -2637,7 +2651,7 @@ function clearAllData() {
     ['settings','watchlist','portfolio','sold','signals','lastScanTime','news','masterList','masterListUpdated'].forEach(k => {
       localStorage.removeItem('edge_' + k);
     });
-    TICKERS = CORE_TICKERS;
+    TICKERS = MASTER_TICKERS;
     loadState();
     renderSettingsTab();
     updateNavBadges();
