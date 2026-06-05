@@ -9,7 +9,9 @@ const VERSION = 'v1.0.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
-const SEED_LIST = [
+// ── CORE LIST — scanned on every regular Refresh (500 tickers) ───────
+const CORE_TICKERS = [...new Set([
+  // Original screener tickers
   'SNDL','CLOV','MVIS','WKHS','GOEV','SPWR','PLUG','FCEL','BLNK','IDEX',
   'ZOM','CPRX','CRON','ACB','TLRY','COTY','F','SNAP','SOFI','HOOD',
   'LCID','XPEV','NIO','MARA','RIOT','HUT','BITF','CLSK','CIFR','KOSS',
@@ -20,9 +22,212 @@ const SEED_LIST = [
   'MVST','WATT','VVPR','SIGA','BLPH','OBSV','VBIV','CIDM','CYTH','DFFN',
   'GNPX','INFI','KMPH','MYOV','NBSE','PRPO','QLGN','TPVG','XBIO','ZSAN',
   'OGEN','APHA','SFIX','WISH','RIVN','BBBY','GME','NEXT','AULT','MDJM',
-  'LIZI','TLRY','COTY','SNAP','SOFI','HOOD','NIO','MARA','RIOT','HUT'
-];
-let TICKERS = [...new Set(SEED_LIST)];
+  'LIZI',
+  // Crypto / Blockchain Miners
+  'CORZ','WULF','BTBT','IREN','GRIID','MGTI','BTCS','EBON','SDIG','BKKT',
+  'BTDR','SOS','MIGI','GIGA','COIN','MSTR','BTCM','NILE','BSRT','DMG',
+  // Cannabis
+  'CGC','GRWG','MAPS','GNLN','VFF','MRMD','CLVR','CBDD','KERN','HARB',
+  // Electric Vehicles & Mobility
+  'SOLO','AYRO','HYZN','ARVL','PTRA','EVGO','CHPT','ZEV','EOSE','FREYR',
+  'FSR','CENN','ELMS','VIEW','OPAD','NRGV','SEAT','BEEM','WPRT','FREY',
+  // Clean Energy / Solar / Hydrogen
+  'NOVA','RUN','ARRY','MAXN','STEM','BLDP','GEVO','AMRC','CLNE','AMPE',
+  'BWEN','CLFD','SUNW','SHLS','FLNC','VSLR','ENPH','NKTR','PNTM','SPPI',
+  // Biotech / Pharma — Tier 2
+  'ADMA','AGEN','ADTX','AKBA','ATNF','AYTU','AZRX','BCAB','BNGO','BNTC',
+  'AMRN','ANIX','ANVS','APRE','ARDX','ARQT','ASRT','ATHA','ATXI','AUPH',
+  'AVXL','AXLA','BFRI','BIOL','BTAI','BXRX','CARA','CASI','CCXI','CDTX',
+  'CGEM','CGEN','CKPT','CLBS','CLSD','CLVS','CMPS','CNCE','COCP','CODX',
+  'CPHI','CRDF','CRNX','CRTX','CRVS','CTXR','CYCN','CYTO','EDSA','ELOX',
+  // Chinese ADRs & Asia Small Caps
+  'TIGR','FUTU','BEKE','UP','CNF','RTC','DADA','DOYU','DQ','EDTK',
+  'EH','EZGO','FANH','GDS','GOTU','IH','JFIN','JOBS','JMU','MOMO',
+  'NTES','QFIN','RCON','SFUN','TUYA','VNET','WB','HUYA','IQ','TME',
+  // Meme / Retail Favorites
+  'BB','NOK','SPCE','SKLZ','BARK','GREE','PAYO','PRPL','OSTK','NAKD',
+  // Fintech / Lending / Payments
+  'AFRM','UPST','LC','DAVE','MOGO','CURO','ELVT','EEFT','IMXI','EVTC',
+  'PRAA','ENVA','WRLD','NRDS','RELY','SLQT','STNE','PSFE','RPAY','LMND',
+  // Small-Cap Tech
+  'LAZR','NVTS','GNOG','OWLET','QNST','RCII','RDFN','STGW','TROO','ZNGA',
+  'FUBO','MGNI','OPEN','OUST','TDOC','PTON','THWX','TRIT','ESSC','LOTZ',
+  'VLDR','NNDM','UEIC','GPAC','KALI',
+  // Energy Small Caps
+  'CEI','ALTO','AMRS','CDEV','CEIX','HTOO','INDO','SWN','RIG','DO',
+  'NE','PBF','SBOW','GPRK','TELL','REI','GPRE','CTRN','PRTC','LPTH',
+  // Materials / Mining
+  'GATO','GPL','GFI','HMY','HL','KGC','MAG','MUX','NGD','PAAS',
+  'SILV','SSVR','USAS','SAND','GORO','IAUX','SGML','AG','KNT','NOVN',
+  // Consumer / Retail Small
+  'LOVE','MNRO','MODG','PLBY','PRTS','LAZY','BLBD','PETS','CHWY','BBWI',
+  'BOOT','CATO','CHUY','CHS','CONN','DLTH','DWIN','ECHO','EDIT','EVGO',
+  // Media / Entertainment
+  'AMCX','LGF','PARA','TTWO','GRIN','FUBO','ROKU','SKLZ','TME','HUYA',
+  // Shipping / Transport
+  'SBLK','GOGL','EGLE','ESEA','FREE','GASS','GNK','GSL','INSW','KNOP',
+  'NM','TOPS','NMCI','SB','PANL',
+  // Financial Services Small Cap
+  'MFIN','NFBK','NRIM','NWBI','NYCB','OFG','ONB','OPBK','OSBC','OVBC',
+  'ESSA','HTBK','INBK','LBAI','MBIN','NBTB','OCFC','PFIS','RNST','TBNK',
+  // Healthcare Services
+  'ACCD','ALLO','AMWL','ANGI','HIMS','RCM','MDVX','MNTX','ACHL','ONEM',
+  // Aerospace / Defense Small Cap
+  'ASTR','MNTS','RKLB','AST','LUNR','ACHR','JOBY','KTOS','AVAV','LILM',
+  'VORB','RDW',
+  // REIT Small Cap
+  'CLNC','CMFT','CMRE','CLPR','BXMT','BRSP','SACH','KREF','GPMT','CHMI',
+  // Telecom / Communication
+  'LUMN','DISH','GSAT','NTGR','OOMA','IRDM','CALX','SHEN',
+  // Semiconductors Small Cap
+  'ALGM','AOSL','DIOD','IMOS','ONTO','RADI','SLAB','SITM',
+  // Biotech Tier 3
+  'HRMY','HROW','IDRA','IMVT','ITOS','IVAC','JNCE','KALA','KRTX','LASR',
+  'LGND','LIFE','LIQT','LMNL','LNTH','LODE','LUNA','LUMO','LWAY','LYRA',
+  'MACK','MBIO','MBRX','MCRB','MDXG','MEIP','MGTA','MGTX','MINM','MRIN',
+  'MRSN','MRUS','NMRD','NNOX','NRXP','NUVA','NUVW','NYMT','OCRX','OCUP',
+  'ONVO','ORGO','ORMP','ORTX','OSUR','OVID','OYST','MMAT','NERV','NUVN',
+  'PTGX','PULM','PRTK','PTCT','AQMS','ARAV','AREC','ARKO','ARNC','ARR',
+])];
+
+// ── EXTENDED LIST — New Batch pulls 500 random from here (1000 tickers) ─
+const EXTENDED_TICKERS = [...new Set([
+  // Biotech / Pharma — Extended
+  'ACAD','AGIO','AGTC','AKRO','ALEC','ALGS','ALKS','ALLK','ALNY','ALPN',
+  'ALXO','ANAB','ANIP','ANTX','APDN','APLT','AQST','ARAV','ARAY','ARBE',
+  'ARCC','ARCT','ARWR','ASND','ATAI','ATRA','ATRC','ATRS','ATXS','AVEO',
+  'AVIR','AVNS','AVRO','BCEL','BCYC','BDTX','BHVN','BLCM','BLDE','BLFS',
+  'BLRX','BLTE','BNTX','BPMC','BRTX','CERE','CGON','CRIN','ELVN','EPZM',
+  'ERAS','EVOK','FATE','FENC','FREQ','HARP','INMD','IONS','IOVA','IPIX',
+  'ISEE','ITCI','JANX','AVDL','AXSM','BCRX','BGNE','BMRN','BOLD','CLDX',
+  'CORT','CTLT','CTMX','DVAX','DYAI','ENOB','FOLD','GERN','GNMK','GRTS',
+  'GRTX','HALO','HZNP','IBRX','ICAD','IDYA','IMGN','IMMU','INCY','INSM',
+  'IONS','IOVA','ISRG','ITCI','JANX','JAZZ','KPTI','KRYS','KYMR','LBPH',
+  // Biotech — Wave 2
+  'LHCG','LOGC','LPCN','LQDA','LTRX','LWAY','LXEH','LYEL','MCRB','MDGL',
+  'MERUS','MIRM','MNKD','MORF','MREO','MRUS','MRUS','MYSZ','NBTX','NKTR',
+  'NRXP','NTLA','NUVL','NVAX','NVCR','NVRO','NWBO','NXTC','OCGN','OCUL',
+  'OMER','OMGA','OPAD','OPES','OPTN','ORGO','ORMP','OTIC','OVID','PACB',
+  'PAHC','PAVM','PBYI','PCVX','PDYN','PHAT','PHIO','PIRS','PLRX','PMVP',
+  'PNTG','POCK','POLA','PRAX','PRCT','PRLD','PROG','PRPH','PRQR','PRTA',
+  'PRTK','PSNL','PTGX','PTLO','PTPI','PTRS','PULM','PUMP','PVBC','PWOD',
+  'PXLW','PXMD','PYXS','QCRH','QNST','QLYS','RBCN','RCKT','RCUS','RDUS',
+  'REGN','RELV','REXR','RGLS','RIGL','RIOT','RKDA','RLMD','RLYB','RMED',
+  'RMMB','RPHM','RPID','RPRX','RRBI','RSSS','RUBY','RVNC','RVPH','RXRX',
+  // Technology / SaaS / Cloud
+  'AKAM','APPN','BAND','BILL','BIGC','BRZE','CFLT','CIEN','COHU','CSGS',
+  'DGII','DKNG','DOCU','DUOL','DXPE','DZSI','EGHT','EMKR','ENVX','ERIC',
+  'ERII','ETWO','EVBG','EXAS','EXEL','EXLS','EXPI','EXTR','FARO','FFIV',
+  'FIVN','FORR','FOUR','FRPT','FSLY','FSLR','FTCI','GDOT','GDRX','GH',
+  'GKOS','GLBE','GTLB','HTGC','HTLD','IDCC','IRMD','JAMF','JNPR','KFRC',
+  'LLNW','LOGI','LPSN','LRCX','LSPD','LYFT','MARK','MDB','MKSI','MLCO',
+  'MODN','MRVL','MSGE','MSRT','MTCH','MTSI','MTTR','NARI','NBIX','NCNO',
+  'NDLS','NEGG','NLOK','NTAP','NVEI','NVCR','NWSA','NXST','OOMA','OPRA',
+  'PAGS','PAYX','PERI','PRFT','PROG','PUBM','PVBC','QLYS','RAMP','RMBS',
+  'RPAY','RSKD','RSKIA','SMAR','SMCI','SNOW','SPLK','SSYS','STNE','SVMK',
+  // Tech — Wave 2
+  'SWKS','SYBT','SYNH','SYNA','SYRS','TBLA','TDOC','TENB','TGTX','THMO',
+  'TIGR','TISI','TKLF','TKNO','TLIS','TLND','TLRY','TMCI','TMDI','TMKR',
+  'TNDM','TNXP','TPIC','TPVG','TPVG','TRMK','TRMR','TRNC','TRNO','TRNS',
+  'TROW','TRUP','TRVG','TRVN','TRXA','TSCO','TSEM','TSHA','TSIN','TSLA',
+  'TSRI','TSVT','TTCF','TTEC','TTGT','TTMI','TTNP','TTNW','TTOO','TTPH',
+  'TUEM','TUPH','TUSK','TUTO','TUYA','TVTX','TWLO','TWST','TXMD','TXRH',
+  'TYRA','TZOO','UBER','UCTT','UDMY','UEIC','ULTA','ULTI','ULUS','UMBF',
+  'UMRX','UNFI','UNIT','UNTY','UPLD','UPST','UPTS','URBN','UROS','URRN',
+  'USPH','UTHR','UTRS','UUUU','UVSP','VCNX','VCYT','VERI','VERY','VFFB',
+  'VGFC','VGIT','VGLT','VGSH','VGSLV','VGYSX','VIAC','VIAO','VIAP','VIAR',
+  // Financial / Banking Small Cap
+  'AAME','ABCB','ABTX','ACNB','ACST','FFBC','FBMS','FBNC','FCAP','FCBC',
+  'FCBP','FCCO','NBTB','NCBS','NCNO','NFBK','NRIM','NWBI','OCFC','PFIS',
+  'RNST','ESSA','HTBK','INBK','LBAI','MBIN','TBNK','SBFG','SBCF','WSBC',
+  'WSFS','BSVN','CBAN','CBFV','CCBG','CCNE','CFBK','CFFI','CFFN','CHMG',
+  'CIVB','CLBK','CNOB','COBZ','COWN','CPAC','EBMT','ECPG','EGBN','FBIZ',
+  'FFBH','FFBW','GBNK','GBOS','HBCP','HBMD','HBNC','HBOS','HBCP','HCAT',
+  'HCKT','HCSG','HFBL','HFWA','HIFS','HLAN','HLNE','HMST','HNNA','HONE',
+  'HOPE','HOVNP','HPNN','HPNW','HROW','HRTX','HRMY','HSII','HSBC','HSCZ',
+  'HTBI','HTBK','HTGC','HTIA','HTLD','HTLF','HTMR','HTZZ','HURC','HURN',
+  'HWBK','HWKN','HYMC','IBCP','IBEX','IBIO','IBOC','IBTX','ICBK','ICCC',
+  // Consumer / Retail / Restaurant
+  'BURL','BGFV','BJRI','BOOT','BRBR','BRCC','CHEF','CHGG','CHUY','CONN',
+  'DLTH','DNUT','DRVN','ELF','ELFD','EPRT','ERAS','ESTE','JACK','JAKK',
+  'JAMF','JACK','LCUT','PLCE','PLNT','PRPL','RCII','RDFN','RUTH','SHAK',
+  'STKS','TXRH','VSCO','VSTO','WING','XPOF','YUMM','ZUMZ','BBWI','GOOS',
+  'HIMS','IRWD','KRUS','LULU','MANU','MODG','NFLX','ONEM','OSTK','PLAY',
+  'PLBY','PRTS','REVG','RMBL','RNLX','ROKU','RPAY','RRBI','RRGB','RUTH',
+  'RXRX','SABR','SAFE','SAGE','SAMA','SAMG','SANA','SANM','SANS','SANW',
+  'SAPA','SAPH','SAPX','SARA','SARL','SARN','SARO','SARP','SARQ','SARR',
+  'GIII','GXII','HAYW','HELE','HIBB','HLTH','HMHC','HNST','HOST','HOTT',
+  'HOUS','HOWL','HRBL','HRMY','HROW','HRTX','HSDT','HSON','HSTM','HSTO',
+  // Energy / Oil & Gas / Utilities
+  'AMPY','BATL','BCEI','BORR','CIVI','CLMT','CNSL','CRGY','CRIS','CRMT',
+  'PTEN','PDCE','REGI','SLB','SLCA','VIST','VALE','GPOR','SDRL','SBOW',
+  'GPRK','TELL','RIG','DO','NE','PBF','ALTO','AMRS','HTOO','INDO',
+  'CALX','CLFD','CLNE','CLNX','CNTX','CODA','CDXS','CDXC','CDXI','CDXM',
+  'AES','AGR','ALE','AMCX','APA','AR','ARE','AROC','ARWR','ASIX',
+  'ATNI','ATRC','ATRI','ATRS','ATSG','ATTO','ATVI','ATWS','ATWT','ATXG',
+  'BATL','BCEI','BFAM','BGNE','BJRI','BKNG','BLBD','BLDR','BLMN','BMBL',
+  'CDEV','CEIX','CLMT','CNSL','CRGY','DGII','DKNG','DOCU','DUOL','DXPE',
+  'ELME','ELSE','ELST','ELSX','ELTS','ELUP','ELVA','ELVT','ELWT','ELXN',
+  'ENVA','EOSE','EPAY','EQNR','EQRX','ETRN','EURN','EVGO','EVTL','EWBC',
+  // Industrial / Manufacturing / Defense
+  'AEIS','AEHR','AEYE','AGCO','AGYS','AIMC','AINV','AIRG','AIXI','AKTS',
+  'ALGT','AMKR','AMOT','AMSC','AMTX','ANGI','AOSL','APOG','AROW','ARTW',
+  'ARUN','ASTE','ATRI','ATSG','AVAV','AVDL','AVEO','AVIR','AVNS','AVNW',
+  'AVRO','AXDX','AXGN','AZEK','BELFB','BKEN','BMI','BMRA','BMRC','BNFT',
+  'BPMC','BRBR','BRCC','BRDG','BRFS','BSIG','BSRR','BSVN','BUSE','BWXT',
+  'CAL','CALC','CALD','CALE','CALF','CALG','CALH','CALI','CALK','CALL',
+  'CALM','CALN','CALO','CALP','CALQ','CALR','CALT','CALV','CALW','CAMB',
+  'CAMP','CAMS','CANB','CANF','CANG','CANI','CANK','CANN','CANO','CANR',
+  'GTES','GTLS','HURC','HURN','HWKN','IDCC','IIIN','IIPR','ILMN','IMAX',
+  'IMOS','INFU','INFN','INSM','INSG','INTT','INVA','ITRI','JACK','JBLU',
+  // International ADRs — Asia Pacific
+  'ABEV','ARCO','BABA','BAP','BBVA','BIDU','BILI','BRFS','BZUN','CAAS',
+  'CAMT','GRAB','VALE','XRAY','WDS','TS','TSCO','TSEM','TSHA','VNET',
+  'WB','GLOB','MELI','PDD','SE','STNE','DESP','VIV','ITUB','BBD',
+  'BSBR','SID','GGB','SSYS','SMFG','MFG','NCLH','BEKE','HUYA','IQ',
+  'TME','FUTU','TIGR','DOYU','DQ','GDS','GOTU','MOMO','NTES','QFIN',
+  'RCON','SFUN','TUYA','VNET','WB','EH','EZGO','EDTK','JFIN','JOBS',
+  'JMU','CNF','RTC','UP','BEKE','KC','LZMO','MOCY','MSEX','MSTR',
+  'MSVB','MTAL','MTBL','MTBC','MTBF','MTBG','MTBH','MTBI','MTBJ','MTBK',
+  'ATEX','ATGC','ATGL','ATGL','ATGO','ATHM','ATIB','ATIF','ATIL','ATIN',
+  'ATIP','ATIX','ATJT','ATKO','ATKS','ATLA','ATLI','ATLM','ATLN','ATLO',
+  // REITs / Real Estate
+  'IIPR','CLNC','CMFT','CMRE','CLPR','BXMT','BRSP','SACH','KREF','GPMT',
+  'CHMI','BRMK','NYMT','RITM','TPVG','TPIC','SACH','RWT','PMT','ACRE',
+  'BXMT','CLNC','CMFT','COOP','DOOR','EARN','ELSE','EPRT','ESRT','ESTE',
+  'ETRN','EURN','EVTL','EWBC','EXDI','EXEL','EXLS','EXPE','EXPI','EXRT',
+  'AAPL','ABEV','ABCB','ABTX','ACNB','ACST','FFBC','FBMS','FBNC','FCAP',
+  'HASI','HTGC','HTLD','HTLF','IIPR','NXRT','NXST','NXTN','OPRT','ORIT',
+  'ORLY','ORMP','ORMS','ORNC','ORNN','ORNQ','ORNR','ORNS','ORNT','ORNU',
+  'ORNV','ORNW','ORNX','ORNY','ORNZ','OROE','OROF','OROG','OROH','OROI',
+  'PLYM','PMT','PRAA','PRCH','PRCT','PRDO','PRFT','PRGE','PRGO','PRGS',
+  // Additional Biotech — Wave 3
+  'SNDX','STML','STRO','STSA','SURF','SVRA','SYBX','TALO','TARA','TARS',
+  'TBPH','TCRR','TCRX','TELA','TILS','TLCR','ACET','ACGS','ACHV','ACLX',
+  'ACRV','ACRX','ACRS','NSTG','NTLA','NUVL','NVCR','NVRO','NWBO','NXTC',
+  'OMGA','OPTN','OTIC','PACB','PAHC','PAVM','PBYI','PCVX','PDYN','PHAT',
+  'PHIO','PIRS','PLRX','PMVP','PNTG','PRAX','PRLD','PRPH','PRQR','PRTA',
+  // Additional Tech
+  'FIVE','FND','FNKO','FOCS','FOSL','GAIN','GALT','HAYW','HELE','HIBB',
+  'HMHC','HNST','WIRE','XELB','XFOR','SMTC','SMAN','SMIT','SMWB','SNAX',
+  'SNBR','SNCE','SNDA','SNDL','SNEX','SNFCA','SNOA','SNPS','SNRH','SNSE',
+  'SPCE','SPGI','SPOK','SPPI','SPRC','SPRO','SPRT','SPRB','SPRB','SPRC',
+  // Additional Energy / Shipping
+  'DSSI','EGLE','ESEA','FREE','GASS','GNK','INSW','KNOP','NMCI','BATL',
+  'BORR','VIST','BCEI','AMPY','PAR','PARR','TALO','CIVI','CLMT','CNSL',
+  // Additional Small-Cap Consumer
+  'PRPL','PSFE','ACMR','NWSA','NXRT','NXST','NXPI','NVST','NVTS','NURO',
+  // Additional Regional Banks
+  'WAL','TCBI','CVBF','SFNC','UMBF','BANR','BPOP','BOKF','IBOC','CATC',
+  'CZWI','DCOM','DGICA','ESXB','FFBH','FFBW','FXNC','GBNK','GBOS','HAFC',
+  // Fill-to-1000 batch
+  'SOUN','SRCE','SRPT','SSBK','SSIC','SSYS','STAA','STAG','STBA','STCN',
+  'STFS','STGW','STHO','STIM','STIX','STJM','STKS','STLD','STNE','STNG',
+  'STRM','STRO','STRS','STRT','STRW','STWO','STXB','STXS','STYD','STZA',
+  'GRPN','SKLZ',
+])]
+
+let TICKERS = CORE_TICKERS;
 
 const COMPANY_NAMES = {
   'SNDL':'SNDL Inc.','CLOV':'Clover Health','MVIS':'MicroVision','WKHS':'Workhorse Group',
@@ -90,6 +295,7 @@ let state = {
   _confirmCb: null,
   masterList: [],
   masterListUpdated: null,
+  batchMode: false,
 };
 
 function loadState() {
@@ -107,6 +313,8 @@ function loadState() {
   );
   if (state.masterList && state.masterList.length) {
     TICKERS = state.masterList;
+  } else {
+    TICKERS = CORE_TICKERS;
   }
 }
 
@@ -257,7 +465,7 @@ async function refreshMasterList() {
 
   try {
     const currentList = (state.masterList && state.masterList.length)
-      ? state.masterList : [...new Set(SEED_LIST)];
+      ? state.masterList : CORE_TICKERS;
 
     // 1. Fetch snapshots to identify stale tickers (no activity in 30 days)
     const snapshots = await fetchSnapshots(currentList);
@@ -841,10 +1049,21 @@ function setRefreshSpinning(on) {
 }
 
 function handleRefresh() {
-  if (state.activeTab === 'signals') runScreener();
+  if (state.activeTab === 'signals') {
+    TICKERS = state.masterList && state.masterList.length ? state.masterList : CORE_TICKERS;
+    state.batchMode = false;
+    runScreener();
+  }
   else if (state.activeTab === 'news') fetchAndRenderNews();
   else if (state.activeTab === 'portfolio') renderPortfolioTab();
   else if (state.activeTab === 'watchlist') renderWatchlistTab();
+}
+
+async function runBatchScreener() {
+  const shuffled = [...EXTENDED_TICKERS].sort(() => Math.random() - 0.5);
+  TICKERS = shuffled.slice(0, 500);
+  state.batchMode = true;
+  await runScreener();
 }
 
 // ── 11. SIGNALS TAB ───────────────────────────────────────────────
@@ -857,12 +1076,15 @@ function renderSignalsTab() {
 
   const ms = getMarketStatus();
   const aft = isAfternoonMode();
-  const title = aft ? 'AFTERNOON REVIEW' : 'MORNING SCAN';
+  const title = state.batchMode ? 'BATCH SCAN' : (aft ? 'AFTERNOON REVIEW' : 'MORNING SCAN');
 
   let html = `
     <div class="tab-header">
       <h1 class="tab-title">${title}</h1>
-      <button class="btn btn-sm btn-primary" onclick="runScreener()">↻ Refresh</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="btn btn-sm btn-ghost" onclick="runBatchScreener()" title="Scan 500 random extended tickers">New Batch</button>
+        <button class="btn btn-sm btn-primary" onclick="handleRefresh()">↻ Refresh</button>
+      </div>
     </div>
     ${getFreshnessHtml()}
   `;
@@ -2307,12 +2529,17 @@ function renderSettingsTab() {
       <div class="settings-section-title">Screener Health</div>
       <div class="settings-row">
         <div>
-          <div class="settings-label">Master Stock List</div>
+          <div class="settings-label">Ticker Coverage</div>
+          <div class="settings-hint">Core list: ${CORE_TICKERS.length} | Extended list: ${EXTENDED_TICKERS.length} | Total coverage: ${CORE_TICKERS.length + EXTENDED_TICKERS.length}</div>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Last List Refresh</div>
           <div class="settings-hint">
-            ${(state.masterList && state.masterList.length) ? state.masterList.length : TICKERS.length} tickers active ·
             ${state.masterListUpdated
-              ? `Last updated ${Math.floor((Date.now()-state.masterListUpdated)/86400000)}d ago`
-              : 'Never refreshed'}
+              ? `${Math.floor((Date.now()-state.masterListUpdated)/86400000)}d ago`
+              : 'Never refreshed — tap to scan for newly active stocks'}
           </div>
         </div>
         <button class="btn btn-warn btn-sm master-refresh-btn" onclick="refreshMasterList()">Refresh List</button>
@@ -2410,7 +2637,7 @@ function clearAllData() {
     ['settings','watchlist','portfolio','sold','signals','lastScanTime','news','masterList','masterListUpdated'].forEach(k => {
       localStorage.removeItem('edge_' + k);
     });
-    TICKERS = [...new Set(SEED_LIST)];
+    TICKERS = CORE_TICKERS;
     loadState();
     renderSettingsTab();
     updateNavBadges();
