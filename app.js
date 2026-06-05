@@ -320,11 +320,10 @@ function loadState() {
     { strongBuy: true, softBuy: true, watch: true },
     state.signalToggles
   );
-  if (state.masterList && state.masterList.length) {
-    TICKERS = state.masterList;
-  } else {
-    TICKERS = MASTER_TICKERS;
-  }
+  // Always scan MASTER_TICKERS; merge any extras discovered via Refresh List on top
+  TICKERS = state.masterList && state.masterList.length
+    ? [...new Set([...MASTER_TICKERS, ...state.masterList])]
+    : MASTER_TICKERS;
 }
 
 function persist(key) {
@@ -524,7 +523,7 @@ async function refreshMasterList() {
 
     state.masterList = updatedList;
     state.masterListUpdated = Date.now();
-    TICKERS = updatedList;
+    TICKERS = [...new Set([...MASTER_TICKERS, ...updatedList])];
     persist('masterList');
     persist('masterListUpdated');
 
@@ -1062,7 +1061,9 @@ function setRefreshSpinning(on) {
 
 function handleRefresh() {
   if (state.activeTab === 'signals') {
-    TICKERS = state.masterList && state.masterList.length ? state.masterList : MASTER_TICKERS;
+    TICKERS = state.masterList && state.masterList.length
+      ? [...new Set([...MASTER_TICKERS, ...state.masterList])]
+      : MASTER_TICKERS;
     runScreener();
   }
   else if (state.activeTab === 'news') fetchAndRenderNews();
