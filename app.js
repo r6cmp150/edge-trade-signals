@@ -22,7 +22,7 @@ const SEED_LIST = [
   'OGEN','APHA','SFIX','WISH','RIVN','BBBY','GME','NEXT','AULT','MDJM',
   'LIZI','TLRY','COTY','SNAP','SOFI','HOOD','NIO','MARA','RIOT','HUT'
 ];
-const TICKERS = [...new Set(SEED_LIST)];
+let TICKERS = [...new Set(SEED_LIST)];
 
 const COMPANY_NAMES = {
   'SNDL':'SNDL Inc.','CLOV':'Clover Health','MVIS':'MicroVision','WKHS':'Workhorse Group',
@@ -88,10 +88,12 @@ let state = {
   soldCurrentPrices: {}, // ticker → current price
   loading: false,
   _confirmCb: null,
+  masterList: [],
+  masterListUpdated: null,
 };
 
 function loadState() {
-  ['settings','watchlist','portfolio','sold','signals','lastScanTime','news','signalToggles'].forEach(k => {
+  ['settings','watchlist','portfolio','sold','signals','lastScanTime','news','signalToggles','masterList','masterListUpdated'].forEach(k => {
     const raw = localStorage.getItem('edge_' + k);
     if (raw) { try { state[k] = JSON.parse(raw); } catch(e) {} }
   });
@@ -103,6 +105,9 @@ function loadState() {
     { strongBuy: true, softBuy: true, watch: true },
     state.signalToggles
   );
+  if (state.masterList && state.masterList.length) {
+    TICKERS = state.masterList;
+  }
 }
 
 function persist(key) {
@@ -217,6 +222,133 @@ function updateMarketBanner() {
     </div>
     <span class="market-countdown">${ms.countdown}</span>
   `;
+}
+
+function updateMasterListBanner() {
+  const el = document.getElementById('master-list-banner');
+  if (!el) return;
+  const ts = state.masterListUpdated;
+  const shouldShow = !ts || (Date.now() - ts) >= (30 * 24 * 60 * 60 * 1000);
+  if (!shouldShow) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <span>Your stock list is 30 days old. Tap Refresh List to scan for newly active stocks.</span>
+    <div class="master-list-banner-btns">
+      <button class="btn btn-warn btn-sm master-refresh-btn" onclick="refreshMasterList()">Refresh List</button>
+      <button class="btn-dismiss" onclick="dismissMasterListBanner()">✕</button>
+    </div>
+  `;
+}
+
+function dismissMasterListBanner() {
+  const el = document.getElementById('master-list-banner');
+  if (el) el.classList.add('hidden');
+}
+
+async function refreshMasterList() {
+  if (!state.settings.alpacaKey || !state.settings.alpacaSecret) {
+    alert('Set your Alpaca API keys in Settings first.');
+    return;
+  }
+
+  document.querySelectorAll('.master-refresh-btn').forEach(b => {
+    b.disabled = true; b.textContent = 'Refreshing…';
+  });
+
+  try {
+    const currentList = (state.masterList && state.masterList.length)
+      ? state.masterList : [...new Set(SEED_LIST)];
+
+    // 1. Fetch snapshots to identify stale tickers (no activity in 30 days)
+    const snapshots = await fetchSnapshots(currentList);
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const staleTickers = [];
+    const activeTickers = [];
+    currentList.forEach(ticker => {
+      const snap = snapshots[ticker];
+      if (!snap) { staleTickers.push(ticker); return; }
+      const price = snap.dailyBar?.c || snap.latestTrade?.p || 0;
+      const volume = snap.dailyBar?.v || 0;
+      const barTime = snap.dailyBar?.t ? new Date(snap.dailyBar.t) : null;
+      if (!barTime || barTime < thirtyDaysAgo || price < 0.50 || volume === 0) {
+        staleTickers.push(ticker);
+      } else {
+        activeTickers.push(ticker);
+      }
+    });
+
+    // 2. Find newly active stocks via Alpaca most-actives screener
+    let newTickers = [];
+    try {
+      const data = await alpacaGet('/screener/stocks/most-actives', { by: 'volume', top: 100 });
+      const mostActives = data.most_actives || [];
+      const symbols = mostActives.map(s => s.symbol).filter(Boolean);
+      if (symbols.length) {
+        const newSnaps = await fetchSnapshots(symbols);
+        const currentSet = new Set(currentList);
+        newTickers = symbols.filter(sym => {
+          if (currentSet.has(sym)) return false;
+          const snap = newSnaps[sym];
+          if (!snap) return false;
+          const price = snap.dailyBar?.c || snap.latestTrade?.p || 0;
+          return price >= 1 && price <= 20;
+        });
+      }
+    } catch(e) { console.warn('Screener endpoint unavailable:', e.message); }
+
+    // 3. Build updated list and persist
+    const updatedList = [...activeTickers, ...newTickers];
+    const addedCount = newTickers.length;
+    const removedCount = staleTickers.length;
+
+    newTickers.forEach(t => { if (!COMPANY_NAMES[t]) COMPANY_NAMES[t] = t; });
+
+    state.masterList = updatedList;
+    state.masterListUpdated = Date.now();
+    TICKERS = updatedList;
+    persist('masterList');
+    persist('masterListUpdated');
+
+    updateMasterListBanner();
+
+    // 4. Show summary
+    const total = updatedList.length;
+    showModal(`
+      <div class="modal-header">
+        <h2 class="modal-title">List Updated</h2>
+        <button class="modal-close" onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-scroll">
+        <p style="color:var(--text-dim);font-size:13px;margin-bottom:8px">
+          List updated — added ${addedCount} new tickers, removed ${removedCount} stale tickers. Total active: ${total}
+        </p>
+        <div class="refresh-summary">
+          <div class="refresh-stat">
+            <span class="refresh-num pos">+${addedCount}</span>
+            <span class="refresh-label">new tickers added</span>
+          </div>
+          <div class="refresh-stat">
+            <span class="refresh-num neg">-${removedCount}</span>
+            <span class="refresh-label">stale tickers removed</span>
+          </div>
+          <div class="refresh-stat refresh-total">
+            <span class="refresh-label">Total active: <strong>${total}</strong></span>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" onclick="closeModal()">Done</button>
+      </div>
+    `);
+
+  } catch(e) {
+    console.error('Master list refresh error:', e);
+    alert('Refresh failed: ' + e.message);
+  } finally {
+    document.querySelectorAll('.master-refresh-btn').forEach(b => {
+      b.disabled = false; b.textContent = 'Refresh List';
+    });
+  }
 }
 
 // ── 4. BUDGET BAR ────────────────────────────────────────────────
@@ -2172,6 +2304,22 @@ function renderSettingsTab() {
     </div>
 
     <div class="settings-section mt12">
+      <div class="settings-section-title">Screener Health</div>
+      <div class="settings-row">
+        <div>
+          <div class="settings-label">Master Stock List</div>
+          <div class="settings-hint">
+            ${(state.masterList && state.masterList.length) ? state.masterList.length : TICKERS.length} tickers active ·
+            ${state.masterListUpdated
+              ? `Last updated ${Math.floor((Date.now()-state.masterListUpdated)/86400000)}d ago`
+              : 'Never refreshed'}
+          </div>
+        </div>
+        <button class="btn btn-warn btn-sm master-refresh-btn" onclick="refreshMasterList()">Refresh List</button>
+      </div>
+    </div>
+
+    <div class="settings-section mt12">
       <div class="settings-section-title">App Info</div>
       <div class="settings-row">
         <span class="settings-label">Version</span>
@@ -2259,9 +2407,10 @@ function exportAllData() {
 
 function clearAllData() {
   showConfirm('Are you sure? This will delete your portfolio, watchlist, and trade history. This cannot be undone.', () => {
-    ['settings','watchlist','portfolio','sold','signals','lastScanTime','news'].forEach(k => {
+    ['settings','watchlist','portfolio','sold','signals','lastScanTime','news','masterList','masterListUpdated'].forEach(k => {
       localStorage.removeItem('edge_' + k);
     });
+    TICKERS = [...new Set(SEED_LIST)];
     loadState();
     renderSettingsTab();
     updateNavBadges();
@@ -2334,6 +2483,7 @@ function startClock() {
 function init() {
   loadState();
   startClock();
+  updateMasterListBanner();
   renderSignalsTab();
 
   // Auto-remove watchlist items outside $1–$20
