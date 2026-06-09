@@ -593,6 +593,49 @@ a { color: var(--blue); }
 .afternoon-prominent .sell-now  { padding: 10px 12px; font-size: 14px; }
 .afternoon-prominent .sell-soon { padding: 10px 12px; font-size: 14px; }
 
+/* ── Signal Action Banners ── */
+.action-banner {
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+  box-sizing: border-box;
+}
+.action-buy-now  { background: rgba(0,255,136,0.2);   color: var(--green);  border: 1px solid rgba(0,255,136,0.5); }
+.action-wait     { background: rgba(255,209,102,0.15); color: var(--yellow); border: 1px solid rgba(255,209,102,0.4); }
+.action-window   { background: rgba(255,150,50,0.15);  color: #ff9632;       border: 1px solid rgba(255,150,50,0.4); }
+.action-missed   { background: rgba(120,120,120,0.15); color: #888;          border: 1px solid rgba(120,120,120,0.3); }
+.action-reason   { font-weight: 400; font-size: 11px; display: block; margin-top: 2px; opacity: 0.9; }
+
+/* ── Portfolio State Banners ── */
+.port-banner {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--cond);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+  text-align: center;
+}
+.port-sell-now    { background: rgba(255,77,109,0.2);   color: var(--red);    border: 2px solid rgba(255,77,109,0.7); font-size: 16px; padding: 14px 12px; }
+.port-sell-soon   { background: rgba(255,150,50,0.15);  color: #ff9632;       border: 1px solid rgba(255,150,50,0.5); }
+.port-hold-track  { background: rgba(0,255,136,0.15);   color: var(--green);  border: 1px solid rgba(0,255,136,0.4); }
+.port-hold-recover{ background: rgba(255,209,102,0.12); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
+.port-danger      { background: rgba(255,77,109,0.15);  color: var(--red);    border: 1px solid rgba(255,77,109,0.5);
+                    animation: port-flash 1.5s ease-in-out infinite; }
+
+@keyframes port-flash {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
 /* ── Portfolio Card ── */
 .portfolio-card {
   background: var(--card);

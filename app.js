@@ -650,7 +650,8 @@ async function groqAnalyze(stock) {
 }
 
 function buildAIPrompt(s) {
-  return `You are a short-term trading analyst. A retail investor is considering this trade:
+  const durLabel = s.duration === 'DAY' ? 'DAY TRADE' : s.duration === '3-DAY' ? '3-DAY SWING' : 'WEEK TRADE';
+  return `You are a short-term trading analyst helping a retail investor decide whether to buy a stock right now. Be direct, specific and actionable. No disclaimers.
 
 Stock: ${s.ticker} (${s.company || s.ticker})
 Current Price: $${s.price.toFixed(2)}
@@ -660,12 +661,22 @@ Volume vs 10-day average: ${s.volRatio.toFixed(2)}x
 Price vs 20-day MA: ${s.price > s.ma20 ? 'ABOVE' : 'BELOW'}
 Signal Score: ${s.score}/100
 Risk Level: ${s.risk}/10
-Trade Duration Classification: ${s.duration === 'DAY' ? 'DAY TRADE' : s.duration === '3-DAY' ? '3-DAY SWING' : 'WEEK TRADE'}
-Price Range Tier: ${s.priceRange}
+Trade Duration: ${durLabel}
+Price Range: ${s.priceRange}
 Recent news: ${s.news ? s.news.headline : 'none'}
 Entry: $${s.entry.toFixed(2)} | Target: $${s.target.toFixed(2)} | Stop-loss: $${s.stop.toFixed(2)}
+Volume Build detected: ${s.volBuild ? 'YES' : 'NO'}
+Mean Reversion setup: ${s.meanReversion ? 'YES' : 'NO'}
 
-Write exactly 3 bullet points (1–2 sentences each) explaining what makes this stock worth buying right now based on the data above. Then write one "Strategy Tip" — a specific, actionable sentence telling the investor exactly how to manage this trade for the ${s.duration === 'DAY' ? 'DAY TRADE' : s.duration === '3-DAY' ? '3-DAY SWING' : 'WEEK TRADE'} timeframe to maximize profit. Be direct and specific. No disclaimers.`;
+Respond with exactly 3 bullet points in this exact format:
+
+- BUY NOW OR WAIT: Tell the investor whether to buy right now at the current price or wait, and specifically what to wait for if waiting is recommended. Be decisive.
+
+- RISKS: List the 2-3 most important risks specific to this trade right now. Include how bad it could get if the stop-loss is hit.
+
+- SIGNALS FOR vs AGAINST: List which signals are working in favor of this trade and which are working against it. Be specific about the numbers.
+
+Keep each bullet point to 2-3 sentences maximum. Be direct like a trader talking to another trader.`;
 }
 
 function parseAIResponse(text) {
@@ -1210,8 +1221,9 @@ function renderStockCard(s, marketClosed) {
   const durBadge = s.duration === 'DAY' ? 'badge-day' : s.duration === '3-DAY' ? 'badge-swing' : 'badge-week';
   const sigBadge = sigBadgeClass(s.signal);
   const newsSnip = s.news ? `<div class="card-news">📰 "${(s.news.headline||'').substring(0,70)}…"</div>` : '';
-  const overlay  = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
-  const ahStrip  = buildAHStrip(s.ticker);
+  const overlay      = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
+  const ahStrip      = buildAHStrip(s.ticker);
+  const actionBanner = buildSignalActionBanner(s);
   const sigBadges = (s.volBuild || s.meanReversion) ? `
     <div class="signal-extra-badges">
       ${s.volBuild      ? '<span class="badge badge-vol-build">VOL BUILD</span>' : ''}
@@ -1221,6 +1233,7 @@ function renderStockCard(s, marketClosed) {
   return `
     <div class="stock-card" onclick="openStockModal('${s.ticker}')">
       ${overlay}
+      ${actionBanner}
       <div class="card-top">
         <div class="card-left">
           <span class="ticker-sym">${s.ticker}</span>
@@ -1250,6 +1263,34 @@ function renderStockCard(s, marketClosed) {
       ${newsSnip}
       ${ahStrip}
     </div>`;
+}
+
+function buildSignalActionBanner(s) {
+  const pt = getPT();
+  const ptMin = pt.getHours() * 60 + pt.getMinutes();
+  const isDay = s.duration === 'DAY';
+  const tradingDay = isTradingDay(pt);
+
+  if (isDay && tradingDay && ptMin >= 720) {
+    return `<div class="action-banner action-missed"><strong>MISSED — TOO LATE TODAY</strong></div>`;
+  }
+  if (isDay && tradingDay && ptMin >= 690) {
+    return `<div class="action-banner action-window"><strong>WINDOW CLOSING</strong></div>`;
+  }
+
+  if (s.score < 50) return '';
+
+  const allGreen = s.rsi >= 45 && s.rsi <= 72 && s.volRatio > 1.3 && s.price > s.ma20;
+  if (allGreen) {
+    return `<div class="action-banner action-buy-now"><strong>BUY NOW</strong> — All signals aligned</div>`;
+  }
+
+  let waitReason = '';
+  if (s.rsi > 72) waitReason = `Wait for RSI to pull back below 70 (currently ${s.rsi.toFixed(0)})`;
+  else if (s.volRatio <= 1.3) waitReason = `Wait for volume to exceed 1.3× avg (currently ${s.volRatio.toFixed(1)}×)`;
+  else if (s.price <= s.ma20) waitReason = `Wait for price to reclaim 20-day MA`;
+
+  return `<div class="action-banner action-wait"><strong>WAIT — WATCH FOR ENTRY</strong><span class="action-reason">${waitReason}</span></div>`;
 }
 
 // ── 13. STOCK DETAIL MODAL ────────────────────────────────────────
@@ -1820,12 +1861,7 @@ async function renderPortfolioTab() {
     const durLabel = p.duration === 'DAY' ? '1-day' : p.duration === '3-DAY' ? '3-day' : '7-day';
     const durBadge = p.duration === 'DAY' ? 'badge-day' : p.duration === '3-DAY' ? 'badge-swing' : 'badge-week';
 
-    const warn = calcSellWarning(p, currentPrice, rsi, atr);
-    const warnHtml = warn === 'SELL_NOW'
-      ? `<div class="sell-banner sell-now ${aft?'afternoon-prominent':''}">🔴 SELL NOW — ${getSellNowReason(p, currentPrice, rsi)}</div>`
-      : warn === 'SELL_SOON'
-      ? `<div class="sell-banner sell-soon ${aft?'afternoon-prominent':''}">⚠️ SELL SOON — ${getSellSoonReason(p, currentPrice, rsi, days)}</div>`
-      : '';
+    const portBanner = buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days);
 
     // Build AH row for portfolio card
     let pfAHHtml = '';
@@ -1850,6 +1886,7 @@ async function renderPortfolioTab() {
     }
 
     html += `<div class="portfolio-card ${cardCls}">
+      ${portBanner}
       <div class="pf-top">
         <div>
           <div style="display:flex;align-items:center;gap:6px">
@@ -1870,7 +1907,6 @@ async function renderPortfolioTab() {
       <div class="card-sub">
         Target $${p.target.toFixed(2)} · Stop $${p.stop.toFixed(2)} · RSI ${rsi.toFixed(0)}
       </div>
-      ${warnHtml}
       <div class="pf-actions">
         <button class="btn btn-danger btn-sm" onclick="openMarkSoldModal('${p.id}', ${currentPrice})">Mark as Sold</button>
         <button class="btn btn-ghost btn-sm" onclick="openStockModal('${p.ticker}')">View Signal</button>
@@ -1939,6 +1975,38 @@ function getSellSoonReason(p, price, rsi, days) {
   if (p.duration === '3-DAY' && days >= 4) return '4+ days — 3-day trade overdue';
   if (p.duration === 'WEEK' && days >= 7) return '7+ days — week trade complete';
   return 'Peak gain giving back';
+}
+
+function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
+  const pt = getPT();
+  const ptMin = pt.getHours() * 60 + pt.getMinutes();
+
+  // SELL NOW
+  if (currentPrice <= p.stop)
+    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Price hit stop-loss</div>`;
+  if (rsi > 78)
+    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — RSI ${rsi.toFixed(0)} — extremely overbought</div>`;
+  if (pnlPct <= -8)
+    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Down 8%+ from purchase</div>`;
+  if (p.duration === 'DAY' && ptMin >= 720 && isTradingDay(pt))
+    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Day trade — exit before close</div>`;
+
+  // DANGER — within 3% of stop-loss
+  const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
+  if (distToStop > 0 && distToStop <= 3)
+    return `<div class="port-banner port-danger"><strong>⚠️ DANGER — NEAR STOP-LOSS</strong> — Stop-loss at $${p.stop.toFixed(2)} — price is ${distToStop.toFixed(1)}% away. Consider exiting.</div>`;
+
+  // SELL SOON — within 5% of target
+  const distToTarget = ((p.target - currentPrice) / p.target) * 100;
+  if (distToTarget >= 0 && distToTarget <= 5)
+    return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Target $${p.target.toFixed(2)} — you are ${distToTarget.toFixed(1)}% away</div>`;
+
+  // HOLD ON TRACK (profitable)
+  if (pnlDollar >= 0)
+    return `<div class="port-banner port-hold-track"><strong>✅ HOLD — ON TRACK</strong> — Up $${pnlDollar.toFixed(2)} (+${pnlPct.toFixed(1)}%) — holding strong</div>`;
+
+  // HOLD RECOVERING (negative but not at stop)
+  return `<div class="port-banner port-hold-recover"><strong>🟡 HOLD — RECOVERING</strong> — Down $${Math.abs(pnlDollar).toFixed(2)} (-${Math.abs(pnlPct).toFixed(1)}%) — stop-loss at $${p.stop.toFixed(2)}</div>`;
 }
 
 // ── 17. MARK AS SOLD ──────────────────────────────────────────────
