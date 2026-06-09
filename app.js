@@ -212,7 +212,6 @@ const HOLIDAYS = new Set([
 
 let state = {
   settings: {},
-  watchlist: [],
   portfolio: [],
   sold: [],
   signals: [],
@@ -223,7 +222,6 @@ let state = {
   signalToggles: { strongBuy: true, softBuy: true, watch: true },
   aiCache: {},         // ticker → {bullets, tip} — session only
   portfolioPrices: {}, // ticker → live price — session only
-  watchlistScores: {}, // ticker → current score — session only
   ahSnapshots: {},     // ticker → SIP snapshot — session only, AH mode
   soldCurrentPrices: {}, // ticker → current price
   loading: false,
@@ -233,7 +231,7 @@ let state = {
 };
 
 function loadState() {
-  ['settings','watchlist','portfolio','sold','signals','lastScanTime','news','signalToggles','masterList','masterListUpdated'].forEach(k => {
+  ['settings','portfolio','sold','signals','lastScanTime','news','signalToggles','masterList','masterListUpdated'].forEach(k => {
     const raw = localStorage.getItem('edge_' + k);
     if (raw) { try { state[k] = JSON.parse(raw); } catch(e) {} }
   });
@@ -499,7 +497,7 @@ function updateBudgetBar() {
   const tab = state.activeTab;
   if (!el) return;
 
-  if (!['signals','portfolio','watchlist'].includes(tab)) {
+  if (!['signals','portfolio'].includes(tab)) {
     el.classList.add('hidden');
     return;
   }
@@ -1024,9 +1022,7 @@ function handleRefresh() {
       : MASTER_TICKERS;
     runScreener();
   }
-  else if (state.activeTab === 'news') fetchAndRenderNews();
   else if (state.activeTab === 'portfolio') renderPortfolioTab();
-  else if (state.activeTab === 'watchlist') renderWatchlistTab();
 }
 
 // ── 11. SIGNALS TAB ───────────────────────────────────────────────
@@ -1242,7 +1238,6 @@ function renderStockCard(s, marketClosed) {
   const riskCls = s.risk <= 3 ? 'risk-low' : s.risk <= 6 ? 'risk-mid' : 'risk-hi';
   const durBadge = durBadgeClass(s.duration);
   const sigBadge = sigBadgeClass(s.signal);
-  const newsSnip = s.news ? `<div class="card-news">📰 "${(s.news.headline||'').substring(0,70)}…"</div>` : '';
   const overlay      = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
   const ahStrip      = buildAHStrip(s.ticker);
   const actionBanner = buildSignalActionBanner(s);
@@ -1282,7 +1277,8 @@ function renderStockCard(s, marketClosed) {
       <div class="card-sub">
         Stop <span class="mono">$${s.stop.toFixed(2)}</span> · RSI ${s.rsi.toFixed(0)} · ${s.priceRange}
       </div>
-      ${newsSnip}
+      ${buildCardNewsSnippet(s)}
+      ${buildScoreBreakdown(s)}
       ${ahStrip}
     </div>`;
 }
@@ -1315,6 +1311,135 @@ function buildSignalActionBanner(s) {
   return `<div class="action-banner action-wait"><strong>WAIT — WATCH FOR ENTRY</strong><span class="action-reason">${waitReason}</span></div>`;
 }
 
+// ── Card news + score breakdown helpers ──────────────────────────
+
+function newsTimeAgo(news) {
+  const ageH = (Date.now() - new Date(news.created_at).getTime()) / 3600000;
+  if (ageH < 1) return `${Math.floor(ageH * 60)}m ago`;
+  if (ageH < 24) return `${Math.floor(ageH)}h ago`;
+  return `${Math.floor(ageH / 24)}d ago`;
+}
+
+function getNewsSentiment(hasNeg, createdAt) {
+  if (hasNeg) return 'NEGATIVE';
+  const ageH = (Date.now() - new Date(createdAt).getTime()) / 3600000;
+  return ageH < 12 ? 'POSITIVE' : 'NEUTRAL';
+}
+
+function buildCardNewsSnippet(s) {
+  if (!s.news) return `<div class="card-news-section"><span class="card-no-news">No recent news</span></div>`;
+  const ageH = (Date.now() - new Date(s.news.created_at).getTime()) / 3600000;
+  if (ageH > 24) return `<div class="card-news-section"><span class="card-no-news">No recent news</span></div>`;
+  const ageStr = newsTimeAgo(s.news);
+  const sentiment = getNewsSentiment(s.hasNegNews, s.news.created_at);
+  const sentCls = sentiment === 'POSITIVE' ? 'sent-pos' : sentiment === 'NEGATIVE' ? 'sent-neg' : 'sent-neutral';
+  const chgCls = s.todayChange >= 0 ? 'pos' : 'neg';
+  const chgStr = `${s.todayChange >= 0 ? '+' : ''}${s.todayChange.toFixed(1)}% today`;
+  const hl = (s.news.headline || '').substring(0, 85);
+  const tail = (s.news.headline || '').length > 85 ? '…' : '';
+  return `<div class="card-news-section">
+    <div class="card-news-label">NEWS</div>
+    <div class="card-news-headline">"${hl}${tail}"</div>
+    <div class="card-news-meta">
+      <span class="card-news-age">${ageStr}</span>
+      <span class="news-sentiment ${sentCls}">${sentiment}</span>
+      <span class="${chgCls}">${chgStr}</span>
+    </div>
+  </div>`;
+}
+
+function buildScoreBreakdown(s) {
+  let volPts = 0;
+  if (s.volRatio >= 3) volPts = 30;
+  else if (s.volRatio >= 2) volPts = 20;
+  else if (s.volRatio >= 1.5) volPts = 10;
+
+  let momPts = 0;
+  if (s.todayChange >= 4) momPts = 20;
+  else if (s.todayChange >= 2) momPts = 10;
+
+  let rsiPts = 0;
+  if (s.rsi >= 50 && s.rsi <= 65) rsiPts = 20;
+  else if (s.rsi > 65 && s.rsi <= 75) rsiPts = 10;
+  else if (s.rsi < 45) rsiPts = 15;
+
+  const maPts = s.price > s.ma20 ? 10 : 0;
+
+  let newsPts = 0, sentPts = 0;
+  if (s.news) {
+    const ageH = (Date.now() - new Date(s.news.created_at).getTime()) / 3600000;
+    if (s.hasNegNews) { sentPts = -10; }
+    else if (ageH < 4) newsPts = 20;
+    else if (ageH < 12) newsPts = 10;
+  }
+
+  const volBuildPts = s.volBuild ? 15 : 0;
+  const meanRevPts  = s.meanReversion ? 20 : 0;
+
+  const newsLabel = s.news ? `Recent news (${newsTimeAgo(s.news)})` : 'Recent news';
+  const sentLabel = s.hasNegNews ? 'News sentiment (negative)' : 'News sentiment';
+
+  const rows = [
+    { label: `Volume spike (${s.volRatio.toFixed(1)}×)`,                          pts: volPts,     fired: volPts > 0 },
+    { label: `Price momentum (${s.todayChange >= 0?'+':''}${s.todayChange.toFixed(1)}%)`, pts: momPts, fired: momPts > 0 },
+    { label: `RSI position (${s.rsi.toFixed(0)})`,                                pts: rsiPts,     fired: rsiPts > 0 },
+    { label: `Above 20-day MA`,                                                    pts: maPts,      fired: maPts > 0 },
+    { label: newsLabel,                                                            pts: newsPts,    fired: newsPts > 0 },
+    { label: sentLabel,                                                            pts: sentPts,    fired: false },
+    { label: `Volume build (3 days)`,                                             pts: volBuildPts, fired: volBuildPts > 0 },
+    { label: `Mean reversion`,                                                     pts: meanRevPts, fired: meanRevPts > 0 },
+  ];
+
+  const id = `sb-${s.ticker}`;
+  const rowsHtml = rows.map(r => {
+    const ptsCls = r.pts > 0 ? 'sb-pos' : r.pts < 0 ? 'sb-neg' : 'sb-zero';
+    const ptsStr = r.pts > 0 ? `+${r.pts}` : `${r.pts}`;
+    return `<div class="sb-row">
+      <span class="sb-check ${r.fired ? 'sb-chk-yes' : 'sb-chk-no'}">${r.fired ? '✓' : '✗'}</span>
+      <span class="sb-label">${r.label}</span>
+      <span class="sb-pts ${ptsCls}">${ptsStr} pts</span>
+    </div>`;
+  }).join('');
+
+  return `<div class="score-breakdown-wrap">
+    <button class="sb-toggle" onclick="event.stopPropagation();toggleBreakdown('${id}')">
+      SCORE BREAKDOWN — ${s.score} pts total <span class="sb-arrow">▼</span>
+    </button>
+    <div class="sb-body hidden" id="${id}">${rowsHtml}</div>
+  </div>`;
+}
+
+function toggleBreakdown(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const hidden = el.classList.toggle('hidden');
+  const arrow = el.previousElementSibling?.querySelector('.sb-arrow');
+  if (arrow) arrow.textContent = hidden ? '▼' : '▲';
+}
+
+function buildModalNewsSection(ticker) {
+  const now = Date.now();
+  const items = (state.news || [])
+    .filter(n => (n.symbols || []).includes(ticker))
+    .slice(0, 3);
+  if (!items.length) return `<div class="section-label">Recent News</div><div class="card-no-news" style="padding:4px 0 8px">No recent news</div>`;
+  const rowsHtml = items.map(n => {
+    const ageH = (now - new Date(n.created_at).getTime()) / 3600000;
+    const ageStr = ageH < 1 ? `${Math.floor(ageH*60)}m ago` : ageH < 24 ? `${Math.floor(ageH)}h ago` : `${Math.floor(ageH/24)}d ago`;
+    const isNeg = NEG_KEYWORDS.some(kw => (n.headline||'').toLowerCase().includes(kw));
+    const sentiment = getNewsSentiment(isNeg, n.created_at);
+    const sentCls = sentiment === 'POSITIVE' ? 'sent-pos' : sentiment === 'NEGATIVE' ? 'sent-neg' : 'sent-neutral';
+    return `<div class="modal-news-item">
+      <div class="modal-news-headline">${n.headline||''}</div>
+      <div class="modal-news-meta">
+        <span class="card-news-age">${ageStr}</span>
+        <span class="news-sentiment ${sentCls}">${sentiment}</span>
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="section-label">Recent News</div>${rowsHtml}`;
+}
+
 // ── 13. STOCK DETAIL MODAL ────────────────────────────────────────
 
 let _priceChart = null;
@@ -1323,8 +1448,7 @@ let _chartBarsHourly  = [];
 let _chartCurrentPrice = 0;
 
 async function openStockModal(ticker) {
-  const s = state.signals.find(x => x.ticker === ticker)
-          || state.watchlist.find(x => x.ticker === ticker);
+  const s = state.signals.find(x => x.ticker === ticker);
 
   showModal(`<div class="modal-handle"></div>
     <div class="modal-header">
@@ -1472,10 +1596,7 @@ async function openStockModal(ticker) {
         <span class="signal-key">Price Range</span>
         <span class="signal-val">${stock.priceRange}</span>
       </div>
-      ${stock.news ? `<div class="signal-row">
-        <span class="signal-key">Recent News</span>
-        <span class="signal-val" style="font-size:11px;max-width:60%;text-align:right">${stock.news.headline}</span>
-      </div>` : ''}
+      <div class="modal-news-section">${buildModalNewsSection(ticker)}</div>
 
       <div class="ai-section" id="ai-section">
         <div class="ai-title">AI Analysis <span style="font-size:10px;color:var(--muted)">(Groq)</span></div>
@@ -1484,7 +1605,6 @@ async function openStockModal(ticker) {
     `;
 
     document.getElementById('stock-modal-footer').innerHTML = `
-      <button class="btn btn-ghost" onclick="addToWatchlist('${ticker}')">👁 Watchlist</button>
       <button class="btn btn-success" style="flex:1" onclick="openAddPortfolioModal('${ticker}')">+ Add to Portfolio</button>
       <button class="btn btn-ghost" onclick="closeModal()">✕</button>
     `;
@@ -1594,8 +1714,7 @@ function renderPriceChart(bars, currentPrice, isHourly = false) {
 }
 
 async function loadAIAnalysis(ticker) {
-  let sig = state.signals.find(s => s.ticker === ticker)
-          || state.watchlist.find(s => s.ticker === ticker);
+  let sig = state.signals.find(s => s.ticker === ticker);
 
   if (!sig) {
     const pos = state.portfolio.find(p => p.ticker === ticker);
@@ -1679,135 +1798,10 @@ function confirmAction() {
   closeConfirm();
 }
 
-// ── 15. WATCHLIST TAB ──────────────────────────────────────────────
-
-function addToWatchlist(ticker) {
-  if (state.watchlist.find(w => w.ticker === ticker)) {
-    closeModal();
-    alert(`${ticker} is already on your Watchlist.`);
-    return;
-  }
-  const sig = state.signals.find(s => s.ticker === ticker);
-  state.watchlist.push({
-    ticker,
-    company: COMPANY_NAMES[ticker] || ticker,
-    addedPrice: sig?.price || 0,
-    addedDate: new Date().toISOString().split('T')[0],
-    addedScore: sig?.score || 0,
-    reason: 'Monitoring for entry',
-  });
-  persist('watchlist');
-  closeModal();
-  updateNavBadges();
-  alert(`${ticker} added to Watchlist.`);
-}
-
-function removeFromWatchlist(ticker) {
-  state.watchlist = state.watchlist.filter(w => w.ticker !== ticker);
-  persist('watchlist');
-  renderWatchlistTab();
-  updateNavBadges();
-}
-
-async function renderWatchlistTab() {
-  updateBudgetBar();
-  const container = document.getElementById('tab-content');
-
-  if (!state.watchlist.length) {
-    container.innerHTML = `<div class="empty-state">
-      <div class="empty-icon">👁</div>
-      <p>No stocks on your Watchlist yet.<br>Tap a stock card and choose "Add to Watchlist".</p>
-    </div>`;
-    return;
-  }
-
-  container.innerHTML = `<div class="tab-header">
-    <h1 class="tab-title">WATCHLIST</h1>
-    <span class="muted" style="font-size:12px">${state.watchlist.length} stocks</span>
-  </div>
-  <div id="wl-list"><div class="empty-state"><span class="spinner"></span></div></div>`;
-
-  // Fetch live prices
-  const tickers = state.watchlist.map(w => w.ticker);
-  let snapshots = {};
-  try {
-    if (state.settings.alpacaKey) snapshots = await fetchSnapshots(tickers);
-  } catch(e) {}
-
-  let allBars = {};
-  try {
-    if (state.settings.alpacaKey) allBars = await fetchMultiBars(tickers, 100);
-  } catch(e) {}
-
-  let html = '';
-  state.watchlist.forEach(w => {
-    const snap = snapshots[w.ticker];
-    const bars = (allBars[w.ticker] || []).sort((a,b) => new Date(a.t)-new Date(b.t));
-    const closes = bars.map(b => b.c);
-    const vols   = bars.map(b => b.v);
-
-    const price     = snap?.dailyBar?.c || snap?.latestTrade?.p || w.addedPrice;
-    const prevClose = snap?.prevDailyBar?.c || price;
-    const rsi       = closes.length >= 15 ? calcRSI(closes) : 0;
-    const atr       = bars.length >= 15 ? calcATR(bars) : 0;
-    const avgVol10  = calcAvgVolume(vols, 10);
-    const volRatio  = avgVol10 > 0 ? ((snap?.dailyBar?.v||0) / avgVol10) : 0;
-    const risk      = calcRiskScore(price, atr, rsi, volRatio, false);
-    const duration  = closes.length >= 15 ? classifyDuration(rsi, volRatio, closes) : '3-DAY';
-    const priceSince = w.addedPrice > 0 ? ((price - w.addedPrice) / w.addedPrice * 100) : 0;
-    const days = Math.floor((Date.now() - new Date(w.addedDate).getTime()) / 86400000);
-    const durBadge = durBadgeClass(duration);
-    const riskCls  = risk <= 3 ? 'risk-low' : risk <= 6 ? 'risk-mid' : 'risk-hi';
-
-    // Quick score for watchlist card
-    const dummySnap = { dailyBar:{ c:price, v:snap?.dailyBar?.v||0 }, prevDailyBar:{c:prevClose}, latestTrade:{p:price} };
-    let currentScore = w.addedScore;
-    if (bars.length >= 15) {
-      const scored = scoreStock(w.ticker, dummySnap, bars, null);
-      currentScore = scored?.score || w.addedScore;
-    }
-    state.watchlistScores[w.ticker] = currentScore;
-    const improving = currentScore > w.addedScore;
-    const fading    = currentScore < w.addedScore - 10;
-
-    html += `<div class="wl-card">
-      <div class="wl-top">
-        <div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <span class="ticker-sym">${w.ticker}</span>
-            <span class="badge ${durBadge}">${durBadgeText(duration)}</span>
-            <span class="risk-pill ${riskCls}">Risk ${risk}/10</span>
-          </div>
-          <div class="company-name mt4">${w.company}</div>
-          <div class="pf-meta">${days}d on watchlist · Added $${w.addedPrice.toFixed(2)}</div>
-        </div>
-        <div style="text-align:right">
-          <div class="price-mono" style="font-size:16px">$${price.toFixed(2)}</div>
-          <div class="${priceSince>=0?'change-pos':'change-neg'}">${priceSince>=0?'▲':'▼'}${Math.abs(priceSince).toFixed(1)}% since added</div>
-          ${improving ? '<div class="signal-improving">Signal Improving ▲</div>' : ''}
-          ${fading    ? '<div class="signal-fading">Signal Fading ▼</div>'    : ''}
-        </div>
-      </div>
-      <div class="card-sub">
-        RSI ${rsi.toFixed(0)} · Vol ${volRatio.toFixed(1)}× · Score ${currentScore} (was ${w.addedScore})
-      </div>
-      <div class="wl-actions">
-        <button class="btn btn-success btn-sm" onclick="openAddPortfolioModal('${w.ticker}')">+ Portfolio</button>
-        <button class="btn btn-ghost btn-sm" onclick="removeFromWatchlist('${w.ticker}')">Remove</button>
-      </div>
-    </div>`;
-  });
-
-  const listEl = document.getElementById('wl-list');
-  if (listEl) listEl.innerHTML = html;
-}
-
-// ── 16. PORTFOLIO TAB ──────────────────────────────────────────────
+// ── 15. PORTFOLIO TAB ──────────────────────────────────────────────
 
 function openAddPortfolioModal(ticker) {
-  const price = state.signals.find(s => s.ticker === ticker)?.price
-              || state.watchlist.find(w => w.ticker === ticker)?.addedPrice
-              || 0;
+  const price = state.signals.find(s => s.ticker === ticker)?.price || 0;
   const today = new Date().toISOString().split('T')[0];
 
   showModal(`<div class="modal-handle"></div>
@@ -1847,7 +1841,6 @@ function confirmAddPortfolio(ticker) {
   }
 
   const sig = state.signals.find(s => s.ticker === ticker);
-  const wl  = state.watchlist.find(w => w.ticker === ticker);
 
   const position = {
     id: Date.now().toString(),
@@ -1868,13 +1861,6 @@ function confirmAddPortfolio(ticker) {
 
   state.portfolio.push(position);
   persist('portfolio');
-
-  // Remove from watchlist if present
-  if (wl) {
-    state.watchlist = state.watchlist.filter(w => w.ticker !== ticker);
-    persist('watchlist');
-  }
-
   closeModal();
   updateNavBadges();
   switchTab('portfolio');
@@ -2504,74 +2490,7 @@ Trade Duration:
   URL.revokeObjectURL(url);
 }
 
-// ── 19. NEWS TAB ──────────────────────────────────────────────────
-
-async function renderNewsTab() {
-  const container = document.getElementById('tab-content');
-  container.innerHTML = `<div class="tab-header">
-    <h1 class="tab-title">NEWS</h1>
-    <button class="btn btn-sm btn-ghost" onclick="fetchAndRenderNews()">↻</button>
-  </div>
-  <div id="news-list"><div class="empty-state"><span class="spinner"></span></div></div>`;
-
-  await fetchAndRenderNews();
-}
-
-async function fetchAndRenderNews() {
-  const listEl = document.getElementById('news-list');
-  if (!listEl) return;
-
-  if (!state.settings.alpacaKey) {
-    listEl.innerHTML = `<div class="empty-state"><p>Add your Alpaca key in Settings to see news.</p></div>`;
-    return;
-  }
-
-  listEl.innerHTML = `<div class="empty-state"><span class="spinner"></span></div>`;
-
-  try {
-    const newsItems = await fetchNewsForTickers(TICKERS.slice(0, 50));
-    state.news = newsItems;
-    persist('news');
-
-    if (!newsItems.length) {
-      listEl.innerHTML = `<div class="empty-state"><p>No recent news found.</p></div>`;
-      return;
-    }
-
-    const holdingTickers = new Set(state.portfolio.map(p => p.ticker));
-    const now = Date.now();
-
-    let html = '';
-    newsItems.forEach(n => {
-      const ageMs  = now - new Date(n.created_at).getTime();
-      const ageH   = ageMs / 3600000;
-      const ageStr = ageH < 1 ? `${Math.floor(ageH*60)}m ago`
-                   : ageH < 24 ? `${Math.floor(ageH)}h ago`
-                   : `${Math.floor(ageH/24)}d ago`;
-      const isFresh = ageH < 4;
-      const syms = (n.symbols || []).slice(0, 3);
-
-      const pillsHtml = syms.map(sym => {
-        const isHolding = holdingTickers.has(sym);
-        return `<span class="ticker-pill ${isHolding?'holding':''}">${sym}${isHolding?' 📼':''}</span>`;
-      }).join('');
-
-      html += `<a class="news-card ${isFresh?'fresh':''}" href="${n.url||'#'}" target="_blank" rel="noopener">
-        <div class="news-top">
-          ${pillsHtml}
-          <span class="news-time">${ageStr}</span>
-        </div>
-        <div class="news-headline">${n.headline}</div>
-      </a>`;
-    });
-
-    listEl.innerHTML = html;
-  } catch(e) {
-    listEl.innerHTML = `<div class="empty-state"><p>Failed to load news. Check your Alpaca key.</p></div>`;
-  }
-}
-
-// ── 20. SETTINGS TAB ──────────────────────────────────────────────
+// ── 19. SETTINGS TAB ──────────────────────────────────────────────
 
 function renderSettingsTab() {
   const s = state.settings;
@@ -2757,7 +2676,6 @@ function exportAllData() {
     version: VERSION,
     exported: new Date().toISOString(),
     settings: { ...state.settings, alpacaKey:'[REDACTED]', alpacaSecret:'[REDACTED]', groqKey:'[REDACTED]' },
-    watchlist: state.watchlist,
     portfolio: state.portfolio,
     sold: state.sold,
   };
@@ -2771,8 +2689,8 @@ function exportAllData() {
 }
 
 function clearAllData() {
-  showConfirm('Are you sure? This will delete your portfolio, watchlist, and trade history. This cannot be undone.', () => {
-    ['settings','watchlist','portfolio','sold','signals','lastScanTime','news','masterList','masterListUpdated'].forEach(k => {
+  showConfirm('Are you sure? This will delete your portfolio and trade history. This cannot be undone.', () => {
+    ['settings','portfolio','sold','signals','lastScanTime','news','masterList','masterListUpdated'].forEach(k => {
       localStorage.removeItem('edge_' + k);
     });
     TICKERS = MASTER_TICKERS;
@@ -2792,15 +2710,13 @@ function switchTab(name) {
     btn.classList.toggle('active', btn.dataset.tab === name);
   });
 
-  const showBudget = ['signals','portfolio','watchlist'].includes(name);
+  const showBudget = ['signals','portfolio'].includes(name);
   document.getElementById('budget-bar')?.classList.toggle('hidden', !showBudget);
 
   switch (name) {
     case 'signals':   renderSignalsTab();   break;
-    case 'watchlist': renderWatchlistTab(); break;
     case 'portfolio': renderPortfolioTab(); break;
     case 'sold':      renderSoldTab();      break;
-    case 'news':      renderNewsTab();      break;
     case 'settings':  renderSettingsTab();  break;
   }
 
@@ -2808,14 +2724,6 @@ function switchTab(name) {
 }
 
 function updateNavBadges() {
-  // Watchlist count
-  const wlBadge = document.getElementById('badge-watchlist');
-  if (wlBadge) {
-    const n = state.watchlist.length;
-    wlBadge.textContent = n;
-    wlBadge.classList.toggle('hidden', n === 0);
-  }
-
   // Portfolio: count active sell warnings
   const pfBadge = document.getElementById('badge-portfolio');
   if (pfBadge) {
@@ -2850,14 +2758,6 @@ function init() {
   startClock();
   updateMasterListBanner();
   renderSignalsTab();
-
-  // Auto-remove watchlist items outside $1–$20
-  state.watchlist = state.watchlist.filter(w => {
-    const p = w.addedPrice;
-    return p >= 1 && p <= 20;
-  });
-  persist('watchlist');
-
   updateNavBadges();
 }
 
