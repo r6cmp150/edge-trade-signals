@@ -1580,9 +1580,33 @@ function renderPriceChart(bars, currentPrice, isHourly = false) {
 }
 
 async function loadAIAnalysis(ticker) {
-  const sig = state.signals.find(s => s.ticker === ticker)
-            || state.watchlist.find(s => s.ticker === ticker);
-  if (!sig) return;
+  let sig = state.signals.find(s => s.ticker === ticker)
+          || state.watchlist.find(s => s.ticker === ticker);
+
+  if (!sig) {
+    const pos = state.portfolio.find(p => p.ticker === ticker);
+    if (!pos) return;
+    const currentPrice = state.portfolioPrices[ticker] || pos.buyPrice;
+    sig = {
+      ticker: pos.ticker,
+      company: pos.company,
+      price: currentPrice,
+      todayChange: 0,
+      rsi: pos.rsiAtBuy || 50,
+      volRatio: pos.volRatioAtBuy || 1,
+      ma20: currentPrice,
+      score: pos.scoreAtBuy || 0,
+      risk: pos.riskAtBuy || 5,
+      duration: pos.duration,
+      priceRange: currentPrice <= 3 ? '$1–$3' : currentPrice <= 9 ? '$4–$9' : '$10–$20',
+      entry: pos.buyPrice,
+      target: pos.target,
+      stop: pos.stop,
+      volBuild: false,
+      meanReversion: false,
+      news: pos.newsAtBuy ? { headline: pos.newsAtBuy } : null,
+    };
+  }
 
   const sec = document.getElementById('ai-section');
   if (!sec) return;
