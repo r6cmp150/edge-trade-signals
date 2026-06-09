@@ -1503,7 +1503,8 @@ function renderChartRange(range) {
       bars = _chartBarsDaily.slice(-3);
     }
   } else if (range === '1M') {
-    bars = _chartBarsDaily.slice(-30);
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    bars = _chartBarsDaily.filter(b => new Date(b.t) >= cutoff);
   } else {
     const ytdStart = new Date(new Date().getFullYear(), 0, 1);
     bars = _chartBarsDaily.filter(b => new Date(b.t) >= ytdStart);
