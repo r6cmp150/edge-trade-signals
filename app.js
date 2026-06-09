@@ -1348,7 +1348,7 @@ function buildCardNewsSnippet(s) {
   </div>`;
 }
 
-function buildScoreBreakdown(s) {
+function computeScoreBreakdown(s) {
   let volPts = 0;
   if (s.volRatio >= 3) volPts = 30;
   else if (s.volRatio >= 2) volPts = 20;
@@ -1375,22 +1375,27 @@ function buildScoreBreakdown(s) {
 
   const volBuildPts = s.volBuild ? 15 : 0;
   const meanRevPts  = s.meanReversion ? 20 : 0;
+  const newsAge     = s.news ? newsTimeAgo(s.news) : null;
 
-  const newsLabel = s.news ? `Recent news (${newsTimeAgo(s.news)})` : 'Recent news';
-  const sentLabel = s.hasNegNews ? 'News sentiment (negative)' : 'News sentiment';
-
-  const rows = [
-    { label: `Volume spike (${s.volRatio.toFixed(1)}×)`,                          pts: volPts,     fired: volPts > 0 },
-    { label: `Price momentum (${s.todayChange >= 0?'+':''}${s.todayChange.toFixed(1)}%)`, pts: momPts, fired: momPts > 0 },
-    { label: `RSI position (${s.rsi.toFixed(0)})`,                                pts: rsiPts,     fired: rsiPts > 0 },
-    { label: `Above 20-day MA`,                                                    pts: maPts,      fired: maPts > 0 },
-    { label: newsLabel,                                                            pts: newsPts,    fired: newsPts > 0 },
-    { label: sentLabel,                                                            pts: sentPts,    fired: false },
-    { label: `Volume build (3 days)`,                                             pts: volBuildPts, fired: volBuildPts > 0 },
-    { label: `Mean reversion`,                                                     pts: meanRevPts, fired: meanRevPts > 0 },
+  return [
+    { key: 'vol',    short: 'vol',      label: `Volume spike (${s.volRatio.toFixed(1)}× avg)`,                                 pts: volPts,     fired: volPts > 0 },
+    { key: 'mom',    short: 'momentum', label: `Price momentum (${s.todayChange>=0?'+':''}${s.todayChange.toFixed(1)}% today)`, pts: momPts,     fired: momPts > 0 },
+    { key: 'rsi',    short: 'RSI',      label: `RSI position (${s.rsi.toFixed(0)})`,                                           pts: rsiPts,     fired: rsiPts > 0 },
+    { key: 'ma',     short: 'MA',       label: `Above 20-day MA ($${s.ma20.toFixed(2)})`,                                      pts: maPts,      fired: maPts > 0 },
+    { key: 'news',   short: 'news',     label: newsAge ? `Recent news (${newsAge})` : 'Recent news',                           pts: newsPts,    fired: newsPts > 0 },
+    { key: 'sent',   short: 'sentiment',label: s.hasNegNews ? 'News sentiment (negative)' : 'News sentiment',                  pts: sentPts,    fired: false },
+    { key: 'vbuild', short: 'vol build',label: `Volume build (3 days rising)`,                                                 pts: volBuildPts, fired: volBuildPts > 0 },
+    { key: 'rev',    short: 'reversal', label: `Mean reversion`,                                                               pts: meanRevPts, fired: meanRevPts > 0 },
   ];
+}
 
-  const id = `sb-${s.ticker}`;
+function buildScoreBreakdown(s) {
+  const rows = computeScoreBreakdown(s);
+  const id   = `sb-${s.ticker}`;
+
+  const top2    = rows.filter(r => r.pts > 0).sort((a,b) => b.pts - a.pts).slice(0, 2);
+  const preview = top2.length ? ' · ' + top2.map(r => `${r.short} +${r.pts}`).join(', ') : '';
+
   const rowsHtml = rows.map(r => {
     const ptsCls = r.pts > 0 ? 'sb-pos' : r.pts < 0 ? 'sb-neg' : 'sb-zero';
     const ptsStr = r.pts > 0 ? `+${r.pts}` : `${r.pts}`;
@@ -1403,10 +1408,43 @@ function buildScoreBreakdown(s) {
 
   return `<div class="score-breakdown-wrap">
     <button class="sb-toggle" onclick="event.stopPropagation();toggleBreakdown('${id}')">
-      SCORE BREAKDOWN — ${s.score} pts total <span class="sb-arrow">▼</span>
+      SCORE BREAKDOWN — ${s.score} pts${preview} <span class="sb-arrow">▼</span>
     </button>
     <div class="sb-body hidden" id="${id}">${rowsHtml}</div>
   </div>`;
+}
+
+function buildModalScoreBreakdown(s) {
+  const rows   = computeScoreBreakdown(s);
+  const sigCls = s.signal === 'STRONG BUY' || s.signal === 'BUY' ? 'msb-strong'
+               : s.signal === 'SOFT BUY' ? 'msb-soft' : 'msb-watch';
+
+  const rowsHtml = rows.map(r => {
+    const ptsCls = r.pts > 0 ? 'sb-pos' : r.pts < 0 ? 'sb-neg' : 'sb-zero';
+    const ptsStr = r.pts > 0 ? `+${r.pts}` : r.pts === 0 ? '+0' : `${r.pts}`;
+    return `<div class="sb-row msb-row">
+      <span class="sb-check ${r.fired ? 'sb-chk-yes' : 'sb-chk-no'}">${r.fired ? '✓' : '✗'}</span>
+      <span class="sb-label msb-label">${r.label}</span>
+      <span class="sb-pts ${ptsCls}">${ptsStr} pts</span>
+    </div>`;
+  }).join('');
+
+  return `
+    <div class="section-label">Score Breakdown</div>
+    <div class="modal-score-breakdown">
+      ${rowsHtml}
+      <div class="msb-divider"></div>
+      <div class="sb-row msb-row msb-total-row">
+        <span class="sb-check" style="opacity:0">✓</span>
+        <span class="sb-label msb-label msb-total-label">TOTAL</span>
+        <span class="sb-pts sb-pos msb-total-pts">${s.score} pts</span>
+      </div>
+      <div class="sb-row msb-row">
+        <span class="sb-check" style="opacity:0">✓</span>
+        <span class="sb-label msb-label msb-total-label">SIGNAL</span>
+        <span class="sb-pts ${sigCls} msb-total-pts">${s.signal}</span>
+      </div>
+    </div>`;
 }
 
 function toggleBreakdown(id) {
@@ -1596,6 +1634,9 @@ async function openStockModal(ticker) {
         <span class="signal-key">Price Range</span>
         <span class="signal-val">${stock.priceRange}</span>
       </div>
+
+      ${buildModalScoreBreakdown(stock)}
+
       <div class="modal-news-section">${buildModalNewsSection(ticker)}</div>
 
       <div class="ai-section" id="ai-section">

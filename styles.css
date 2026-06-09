@@ -1322,6 +1322,17 @@ input:checked + .toggle-slider::before { transform: translateX(20px); }
 .sb-neg  { color: var(--red); }
 .sb-zero { color: var(--muted); }
 
+/* ── Modal Score Breakdown ── */
+.modal-score-breakdown { margin-bottom: 12px; }
+.msb-row { padding: 4px 0; }
+.msb-label { font-size: 12px; }
+.msb-divider { height: 1px; background: var(--border); margin: 8px 0; }
+.msb-total-label { font-family: var(--cond); font-weight: 700; font-size: 12px; letter-spacing: 0.5px; color: var(--text); }
+.msb-total-pts { font-family: var(--mono); font-weight: 700; font-size: 12px; }
+.msb-strong { color: var(--green); }
+.msb-soft   { color: var(--yellow); }
+.msb-watch  { color: var(--muted); }
+
 /* ── Modal News Section ── */
 .modal-news-section { margin: 12px 0; }
 .modal-news-item {
