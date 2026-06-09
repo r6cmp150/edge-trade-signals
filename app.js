@@ -605,6 +605,17 @@ async function fetchSingleBars(ticker, limit = 300) {
   } catch(e) { return []; }
 }
 
+async function fetchHourlyBars(ticker) {
+  const d = new Date(); d.setDate(d.getDate() - 4);
+  const start = d.toISOString().split('T')[0];
+  try {
+    const data = await alpacaGet(`/stocks/${ticker}/bars`, {
+      timeframe: '1Hour', start, limit: 200, sort: 'asc', feed: 'iex'
+    });
+    return data.bars || [];
+  } catch(e) { return []; }
+}
+
 async function fetchNewsForTickers(tickers) {
   if (!tickers.length) return [];
   try {
@@ -1296,6 +1307,9 @@ function buildSignalActionBanner(s) {
 // ── 13. STOCK DETAIL MODAL ────────────────────────────────────────
 
 let _priceChart = null;
+let _chartBarsDaily   = [];
+let _chartBarsHourly  = [];
+let _chartCurrentPrice = 0;
 
 async function openStockModal(ticker) {
   const s = state.signals.find(x => x.ticker === ticker)
@@ -1316,12 +1330,15 @@ async function openStockModal(ticker) {
   `);
 
   try {
-    const bars = await fetchSingleBars(ticker, 300);
+    const [bars, hourlyBars] = await Promise.all([fetchSingleBars(ticker, 300), fetchHourlyBars(ticker)]);
     const sorted = [...bars].sort((a,b) => new Date(a.t) - new Date(b.t));
+    _chartBarsDaily  = sorted;
+    _chartBarsHourly = [...hourlyBars].sort((a,b) => new Date(a.t) - new Date(b.t));
     const closes = sorted.map(b => b.c);
     const vols   = sorted.map(b => b.v);
 
     const price   = (s?.price) || sorted[sorted.length-1]?.c || 0;
+    _chartCurrentPrice = price;
     const rsi     = calcRSI(closes);
     const atr     = calcATR(sorted);
     const ma20    = calcMA(closes, 20);
@@ -1359,8 +1376,7 @@ async function openStockModal(ticker) {
       ? 'RSI moderate with upward trend and steady volume — patient setup'
       : 'Moderate RSI with volume confirmation — medium-term swing';
 
-    const display90 = sorted.slice(-90);
-    const upside = ((stock.target - stock.price) / stock.price * 100).toFixed(1);
+    const upside =((stock.target - stock.price) / stock.price * 100).toFixed(1);
     const downside = ((stock.stop - stock.price) / stock.price * 100).toFixed(1);
 
     document.getElementById('stock-modal-body').innerHTML = `
@@ -1372,6 +1388,11 @@ async function openStockModal(ticker) {
         <span class="risk-pill ${riskCls}">Risk ${stock.risk}/10</span>
       </div>
 
+      <div class="chart-range-btns">
+        <button class="chart-range-btn active" data-range="3D" onclick="renderChartRange('3D')">3 Days</button>
+        <button class="chart-range-btn" data-range="1M" onclick="renderChartRange('1M')">1 Month</button>
+        <button class="chart-range-btn" data-range="YTD" onclick="renderChartRange('YTD')">YTD</button>
+      </div>
       <div class="chart-wrap">
         <canvas id="price-chart"></canvas>
       </div>
@@ -1454,8 +1475,8 @@ async function openStockModal(ticker) {
       <button class="btn btn-ghost" onclick="closeModal()">✕</button>
     `;
 
-    // Draw chart
-    renderPriceChart(display90, price);
+    // Draw chart — default 3D
+    renderChartRange('3D');
 
     // Restore AI if cached
     if (state.aiCache[ticker]) {
@@ -1468,7 +1489,31 @@ async function openStockModal(ticker) {
   }
 }
 
-function renderPriceChart(bars, currentPrice) {
+function renderChartRange(range) {
+  document.querySelectorAll('.chart-range-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === range);
+  });
+
+  let bars, isHourly = false;
+  if (range === '3D') {
+    if (_chartBarsHourly.length >= 6) {
+      bars = _chartBarsHourly;
+      isHourly = true;
+    } else {
+      bars = _chartBarsDaily.slice(-3);
+    }
+  } else if (range === '1M') {
+    bars = _chartBarsDaily.slice(-30);
+  } else {
+    const ytdStart = new Date(new Date().getFullYear(), 0, 1);
+    bars = _chartBarsDaily.filter(b => new Date(b.t) >= ytdStart);
+    if (!bars.length) bars = _chartBarsDaily.slice(-90);
+  }
+
+  renderPriceChart(bars, _chartCurrentPrice, isHourly);
+}
+
+function renderPriceChart(bars, currentPrice, isHourly = false) {
   const canvas = document.getElementById('price-chart');
   if (!canvas) return;
   if (_priceChart) { _priceChart.destroy(); _priceChart = null; }
@@ -1476,6 +1521,10 @@ function renderPriceChart(bars, currentPrice) {
   const labels = bars.map((b, i) => {
     const d = new Date(b.t);
     const prev = i > 0 ? new Date(bars[i-1].t) : null;
+    if (isHourly) {
+      return (!prev || d.getDate() !== prev.getDate())
+        ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+    }
     return (!prev || d.getMonth() !== prev.getMonth())
       ? d.toLocaleDateString('en-US', { month: 'short' }) : '';
   });
@@ -1805,10 +1854,12 @@ async function renderPortfolioTab() {
     return;
   }
 
+  const weekendBanner = buildWeekendBanner();
   container.innerHTML = `<div class="tab-header">
     <h1 class="tab-title">PORTFOLIO</h1>
     <button class="btn btn-sm btn-ghost" onclick="renderPortfolioTab()">↻</button>
   </div>
+  ${weekendBanner}
   <div id="pf-list"><div class="empty-state"><span class="spinner"></span></div></div>
   <div id="pf-summary"></div>`;
 
@@ -1861,7 +1912,10 @@ async function renderPortfolioTab() {
     const durLabel = p.duration === 'DAY' ? '1-day' : p.duration === '3-DAY' ? '3-day' : '7-day';
     const durBadge = p.duration === 'DAY' ? 'badge-day' : p.duration === '3-DAY' ? 'badge-swing' : 'badge-week';
 
-    const portBanner = buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days);
+    const portBanner   = buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days);
+    const fridayFlag   = buildFridayFlag(p, currentPrice, pnlPct);
+    const priceDiffPct = ((currentPrice - p.buyPrice) / p.buyPrice) * 100;
+    const priceTrackCls = Math.abs(priceDiffPct) < 1 ? 'pf-track-flat' : priceDiffPct > 0 ? 'pf-track-up' : 'pf-track-down';
 
     // Build AH row for portfolio card
     let pfAHHtml = '';
@@ -1887,6 +1941,7 @@ async function renderPortfolioTab() {
 
     html += `<div class="portfolio-card ${cardCls}">
       ${portBanner}
+      ${fridayFlag}
       <div class="pf-top">
         <div>
           <div style="display:flex;align-items:center;gap:6px">
@@ -1894,14 +1949,16 @@ async function renderPortfolioTab() {
             <span class="badge ${durBadge}">${p.duration}</span>
           </div>
           <div class="company-name mt4">${p.company}</div>
-          <div class="pf-meta">${p.shares} shares @ $${p.buyPrice.toFixed(2)}</div>
-          <div class="pf-meta">Bought ${p.buyDate} · Day ${days+1} of ${durLabel} trade</div>
+          <div class="pf-meta">${p.shares} shares · Day ${days+1} of ${durLabel} trade</div>
+          <div class="pf-meta">Bought ${p.buyDate}</div>
         </div>
         <div style="text-align:right">
-          <div class="price-mono" style="font-size:16px">$${currentPrice.toFixed(2)}</div>
-          <div class="pf-pnl ${pnlCls}">${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)}</div>
+          <div class="pf-pnl ${pnlCls}" style="font-size:15px">${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)}</div>
           <div class="pf-pnl ${pnlCls}" style="font-size:13px">${pnlDollar>=0?'▲':'▼'}${Math.abs(pnlPct).toFixed(1)}%</div>
         </div>
+      </div>
+      <div class="pf-price-track ${priceTrackCls}">
+        Bought: $${p.buyPrice.toFixed(2)} → Now: $${currentPrice.toFixed(2)}
       </div>
       ${pfAHHtml}
       <div class="card-sub">
@@ -1975,6 +2032,40 @@ function getSellSoonReason(p, price, rsi, days) {
   if (p.duration === '3-DAY' && days >= 4) return '4+ days — 3-day trade overdue';
   if (p.duration === 'WEEK' && days >= 7) return '7+ days — week trade complete';
   return 'Peak gain giving back';
+}
+
+function buildWeekendBanner() {
+  const pt = getPT();
+  if (pt.getDay() !== 5 || !isTradingDay(pt)) return '';
+  const ptMin = pt.getHours() * 60 + pt.getMinutes();
+  if (ptMin < 660) return ''; // before 11:00am PT
+  const minsToClose = 780 - ptMin; // market closes at 1:00pm PT (780 min)
+  const timeStr = minsToClose > 0
+    ? `${(minsToClose / 60).toFixed(1)} hours`
+    : 'soon';
+  return `<div class="weekend-banner">⚠️ WEEKEND RISK — Market closes in ${timeStr}. Consider taking profits on winning positions before close to avoid weekend exposure.</div>`;
+}
+
+function buildFridayFlag(p, currentPrice, pnlPct) {
+  const pt = getPT();
+  if (pt.getDay() !== 5 || !isTradingDay(pt)) return '';
+  const ptMin = pt.getHours() * 60 + pt.getMinutes();
+  if (ptMin < 660) return ''; // before 11:00am PT
+
+  if (p.duration === 'DAY') {
+    return `<div class="friday-flag friday-urgent">📅 DAY TRADE — exit today, do not hold over weekend</div>`;
+  }
+
+  const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
+  if (currentPrice <= p.stop || distToStop <= 3 || pnlPct <= -8) {
+    return `<div class="friday-flag friday-urgent">📅 Friday — strongly consider exiting before weekend</div>`;
+  }
+
+  if (pnlPct >= 0) {
+    return `<div class="friday-flag">📅 Friday — consider taking profits before close</div>`;
+  }
+
+  return `<div class="friday-flag">📅 Friday — are you comfortable holding this risk over the weekend?</div>`;
 }
 
 function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
