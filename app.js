@@ -661,7 +661,7 @@ async function groqAnalyze(stock) {
 }
 
 function buildAIPrompt(s) {
-  const durLabel = s.duration === 'DAY' ? 'DAY TRADE' : s.duration === '3-DAY' ? '3-DAY SWING' : 'WEEK TRADE';
+  const durLabel = durBadgeText(s.duration);
   return `You are a short-term trading analyst helping a retail investor decide whether to buy a stock right now. Be direct, specific and actionable. No disclaimers.
 
 Stock: ${s.ticker} (${s.company || s.ticker})
@@ -764,6 +764,17 @@ function calcAvgVolume(volumes, days) {
   if (!volumes.length) return 0;
   const slice = volumes.slice(-Math.min(days, volumes.length));
   return slice.reduce((a, b) => a + b, 0) / slice.length;
+}
+
+// ── Duration label helpers ─────────────────────────────────────────
+function durBadgeClass(duration) {
+  return duration === 'DAY' ? 'badge-day' : duration === '3-DAY' ? 'badge-swing' : 'badge-week';
+}
+function durBadgeText(duration) {
+  return duration === 'DAY' ? 'EXIT TODAY' : duration === '3-DAY' ? 'EST. 2-4 DAYS' : 'EST. 5-7 DAYS';
+}
+function durHoldLabel(duration) {
+  return duration === 'DAY' ? 'exit today' : duration === '3-DAY' ? 'est. 2-4 day' : 'est. 5-7 day';
 }
 
 // ── 9. SCORING ENGINE ─────────────────────────────────────────────
@@ -1125,7 +1136,7 @@ function renderFilterButtons() {
     <div class="filter-label">Trade Duration</div>
     <div class="filter-row">
       ${['all','DAY','3-DAY','WEEK'].map(v =>
-        `<button class="filter-btn ${df===v?'active':''}" onclick="setFilter('duration','${v}')">${v==='all'?'All':v}</button>`
+        `<button class="filter-btn ${df===v?'active':''}" onclick="setFilter('duration','${v}')">${v==='all'?'All':v==='DAY'?'Exit Today':v==='3-DAY'?'2-4 Days':'5-7 Days'}</button>`
       ).join('')}
     </div>
   `;
@@ -1229,7 +1240,7 @@ function renderStockCard(s, marketClosed) {
   const chgCls  = s.todayChange >= 0 ? 'change-pos' : 'change-neg';
   const upside  = ((s.target - s.price) / s.price * 100).toFixed(1);
   const riskCls = s.risk <= 3 ? 'risk-low' : s.risk <= 6 ? 'risk-mid' : 'risk-hi';
-  const durBadge = s.duration === 'DAY' ? 'badge-day' : s.duration === '3-DAY' ? 'badge-swing' : 'badge-week';
+  const durBadge = durBadgeClass(s.duration);
   const sigBadge = sigBadgeClass(s.signal);
   const newsSnip = s.news ? `<div class="card-news">📰 "${(s.news.headline||'').substring(0,70)}…"</div>` : '';
   const overlay      = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
@@ -1253,7 +1264,7 @@ function renderStockCard(s, marketClosed) {
         </div>
         <div class="card-right">
           <span class="badge ${sigBadge}">${s.signal} ${s.score}</span>
-          <span class="badge ${durBadge}">${s.duration}</span>
+          <span class="badge ${durBadge}">${durBadgeText(s.duration)}</span>
         </div>
       </div>
       <div class="card-mid">
@@ -1361,7 +1372,7 @@ async function openStockModal(ticker) {
 
     const chgCls  = stock.todayChange >= 0 ? 'change-pos' : 'change-neg';
     const chgSign = stock.todayChange >= 0 ? '▲' : '▼';
-    const durBadge = stock.duration === 'DAY' ? 'badge-day' : stock.duration === '3-DAY' ? 'badge-swing' : 'badge-week';
+    const durBadge = durBadgeClass(stock.duration);
     const sigBadge = sigBadgeClass(stock.signal);
     const riskCls  = stock.risk <= 3 ? 'risk-low' : stock.risk <= 6 ? 'risk-mid' : 'risk-hi';
 
@@ -1384,7 +1395,7 @@ async function openStockModal(ticker) {
         <span class="price-mono" style="font-size:20px">$${price.toFixed(2)}</span>
         <span class="${chgCls}">${chgSign}${Math.abs(stock.todayChange).toFixed(1)}%</span>
         <span class="badge ${sigBadge}">${stock.signal} ${stock.score}</span>
-        <span class="badge ${durBadge}">${stock.duration}</span>
+        <span class="badge ${durBadge}">${durBadgeText(stock.duration)}</span>
         <span class="risk-pill ${riskCls}">Risk ${stock.risk}/10</span>
       </div>
 
@@ -1452,7 +1463,10 @@ async function openStockModal(ticker) {
       </div>` : ''}
       <div class="signal-row">
         <span class="signal-key">Duration</span>
-        <span class="signal-val">${stock.duration} — ${durWhy}</span>
+        <span class="signal-val">${durBadgeText(stock.duration)} — ${durWhy}</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted);padding:2px 0 8px;line-height:1.4">
+        Duration is an estimate based on historical volatility. Always follow sell warnings over duration labels.
       </div>
       <div class="signal-row">
         <span class="signal-key">Price Range</span>
@@ -1742,7 +1756,7 @@ async function renderWatchlistTab() {
     const duration  = closes.length >= 15 ? classifyDuration(rsi, volRatio, closes) : '3-DAY';
     const priceSince = w.addedPrice > 0 ? ((price - w.addedPrice) / w.addedPrice * 100) : 0;
     const days = Math.floor((Date.now() - new Date(w.addedDate).getTime()) / 86400000);
-    const durBadge = duration === 'DAY' ? 'badge-day' : duration === '3-DAY' ? 'badge-swing' : 'badge-week';
+    const durBadge = durBadgeClass(duration);
     const riskCls  = risk <= 3 ? 'risk-low' : risk <= 6 ? 'risk-mid' : 'risk-hi';
 
     // Quick score for watchlist card
@@ -1761,7 +1775,7 @@ async function renderWatchlistTab() {
         <div>
           <div style="display:flex;align-items:center;gap:6px">
             <span class="ticker-sym">${w.ticker}</span>
-            <span class="badge ${durBadge}">${duration}</span>
+            <span class="badge ${durBadge}">${durBadgeText(duration)}</span>
             <span class="risk-pill ${riskCls}">Risk ${risk}/10</span>
           </div>
           <div class="company-name mt4">${w.company}</div>
@@ -1934,8 +1948,8 @@ async function renderPortfolioTab() {
     const cardCls   = Math.abs(pnlPct) < 1 ? 'breakeven' : pnlDollar >= 0 ? 'in-profit' : 'in-loss';
 
     const days = Math.floor((Date.now() - new Date(p.buyDate).getTime()) / 86400000);
-    const durLabel = p.duration === 'DAY' ? '1-day' : p.duration === '3-DAY' ? '3-day' : '7-day';
-    const durBadge = p.duration === 'DAY' ? 'badge-day' : p.duration === '3-DAY' ? 'badge-swing' : 'badge-week';
+    const durLabel = durHoldLabel(p.duration);
+    const durBadge = durBadgeClass(p.duration);
 
     const portBanner   = buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days);
     const fridayFlag   = buildFridayFlag(p, currentPrice, pnlPct);
@@ -1971,10 +1985,10 @@ async function renderPortfolioTab() {
         <div>
           <div style="display:flex;align-items:center;gap:6px">
             <span class="ticker-sym">${p.ticker}</span>
-            <span class="badge ${durBadge}">${p.duration}</span>
+            <span class="badge ${durBadge}">${durBadgeText(p.duration)}</span>
           </div>
           <div class="company-name mt4">${p.company}</div>
-          <div class="pf-meta">${p.shares} shares · Day ${days+1} of ${durLabel} trade</div>
+          <div class="pf-meta">${p.shares} shares · Day ${days+1} of ${durLabel} trade (est.)</div>
           <div class="pf-meta">Bought ${p.buyDate}</div>
         </div>
         <div style="text-align:right">
@@ -2054,8 +2068,8 @@ function getSellSoonReason(p, price, rsi, days) {
   const toTarget = price >= p.target * 0.97;
   if (toTarget) return 'Within 3% of target — protect gains';
   if (rsi >= 72) return `RSI ${rsi.toFixed(0)} approaching overbought`;
-  if (p.duration === '3-DAY' && days >= 4) return '4+ days — 3-day trade overdue';
-  if (p.duration === 'WEEK' && days >= 7) return '7+ days — week trade complete';
+  if (p.duration === '3-DAY' && days >= 4) return '4+ days — est. 2-4 day trade overdue';
+  if (p.duration === 'WEEK' && days >= 7) return '7+ days — est. 5-7 day trade complete';
   return 'Peak gain giving back';
 }
 
@@ -2078,7 +2092,7 @@ function buildFridayFlag(p, currentPrice, pnlPct) {
   if (ptMin < 660) return ''; // before 11:00am PT
 
   if (p.duration === 'DAY') {
-    return `<div class="friday-flag friday-urgent">📅 DAY TRADE — exit today, do not hold over weekend</div>`;
+    return `<div class="friday-flag friday-urgent">📅 EXIT TODAY — do not hold over weekend</div>`;
   }
 
   const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
@@ -2420,9 +2434,9 @@ Performance by price tier:
   ${tierStats(10,20,'$10–$20')}
 
 Performance by duration classification:
-  ${durStats('DAY','Day Trade')}
-  ${durStats('3-DAY','3-Day Swing')}
-  ${durStats('WEEK','Week Trade')}
+  ${durStats('DAY','Exit Today')}
+  ${durStats('3-DAY','Est. 2-4 Days')}
+  ${durStats('WEEK','Est. 5-7 Days')}
 
 Performance by signal score at purchase:
   ${scoreStats(50,60)}
