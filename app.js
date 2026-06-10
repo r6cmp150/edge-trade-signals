@@ -223,6 +223,7 @@ let state = {
   aiCache: {},         // ticker → {bullets, tip} — session only
   portfolioPrices: {}, // ticker → live price — session only
   ahSnapshots: {},     // ticker → SIP snapshot — session only, AH mode
+  spyChange: 0,        // SPY today % change — updated each screener run
   soldCurrentPrices: {}, // ticker → current price
   loading: false,
   _confirmCb: null,
@@ -820,7 +821,7 @@ function calcRiskScore(price, atr, rsi, volRatio, hasNegNews) {
   return Math.min(10, Math.max(1, r));
 }
 
-function scoreStock(ticker, snap, bars, newsItem) {
+function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
   const price = snap.dailyBar?.c || snap.latestTrade?.p || 0;
   const prevClose = snap.prevDailyBar?.c || price;
   const volume = snap.dailyBar?.v || 0;
@@ -855,18 +856,12 @@ function scoreStock(ticker, snap, bars, newsItem) {
   else if (rsi < 45 && closes.length >= 5 && closes[closes.length-1] > closes[closes.length-5]) score += 15;
   // Above 20-day MA
   if (price > ma20) score += 10;
-  // News
+
+  // News: compute hasNegNews for risk/display — no longer affects score
   let hasNegNews = false;
   if (newsItem) {
     const hl = (newsItem.headline || '').toLowerCase();
     hasNegNews = NEG_KEYWORDS.some(kw => hl.includes(kw));
-    if (hasNegNews) {
-      score -= 10;
-    } else {
-      const ageH = (Date.now() - new Date(newsItem.created_at).getTime()) / 3600000;
-      if (ageH < 4) score += 20;
-      else if (ageH < 12) score += 10;
-    }
   }
 
   // Volume Build: 3 consecutive days of rising volume + today >= 1.3x avg (0–15)
@@ -890,9 +885,30 @@ function scoreStock(ticker, snap, bars, newsItem) {
     }
   }
 
+  // Consecutive up days (0–15 pts)
+  let consUpDays = 0;
+  for (let i = sorted.length - 1; i > 0; i--) {
+    if (sorted[i].c > sorted[i-1].c) consUpDays++;
+    else break;
+  }
+  let consUpPts = 0;
+  if (consUpDays >= 4) consUpPts = 15;
+  else if (consUpDays === 3) consUpPts = 10;
+  else if (consUpDays === 2) consUpPts = 5;
+  score += consUpPts;
+
+  // Relative strength vs SPY (0–15 pts)
+  const rsVsSPY = todayChange - spyChangePct;
+  let relStrengthPts = 0;
+  if (rsVsSPY >= 2) relStrengthPts = 15;
+  else if (rsVsSPY >= 1) relStrengthPts = 10;
+  else if (rsVsSPY > 0) relStrengthPts = 5;
+  score += relStrengthPts;
+
   const signalsFired = [];
   if (volBuild) signalsFired.push('VOL_BUILD');
   if (meanReversion) signalsFired.push('MEAN_REVERSION');
+  if (consUpDays >= 3) signalsFired.push('CONS_UP');
 
   const volTrend = volBuild ? 'building' : volRatio >= 1.5 ? 'spike' : 'normal';
 
@@ -907,6 +923,7 @@ function scoreStock(ticker, snap, bars, newsItem) {
     rsi, atr, ma20, duration, entry, target, stop,
     score, risk, signal, priceRange, news: newsItem, hasNegNews,
     volBuild, meanReversion, maPct, volTrend, signalsFired,
+    consUpDays, consUpPts, spyChange: spyChangePct, rsVsSPY, relStrengthPts,
     bars: sorted
   };
 }
@@ -956,15 +973,28 @@ async function runScreener() {
       });
     });
 
-    // 5. Pre-market movers (if applicable)
+    // 5. SPY change for relative strength scoring
+    let spyChangePct = 0;
+    try {
+      const spySnap = await fetchSnapshots(['SPY']);
+      const spy = spySnap['SPY'];
+      if (spy) {
+        const spyP = spy.dailyBar?.c || spy.latestTrade?.p || 0;
+        const spyPrev = spy.prevDailyBar?.c || spyP;
+        spyChangePct = spyPrev > 0 ? ((spyP - spyPrev) / spyPrev) * 100 : 0;
+      }
+    } catch(e) {}
+    state.spyChange = spyChangePct;
+
+    // 6. Pre-market movers (if applicable)
     if (isPreMarketHours()) {
       await computePreMarketMovers(snapshots, candidates.slice(0, 20));
     }
 
-    // 6. Score
+    // 7. Score
     const scored = candidates.map(([ticker, snap]) => {
       const bars = allBars[ticker] || [];
-      return scoreStock(ticker, snap, bars, newsMap[ticker] || null);
+      return scoreStock(ticker, snap, bars, newsMap[ticker] || null, spyChangePct);
     }).filter(s => s && s.score >= 20);
 
     // 7. Apply under-$2 filter
@@ -1241,10 +1271,12 @@ function renderStockCard(s, marketClosed) {
   const overlay      = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
   const ahStrip      = buildAHStrip(s.ticker);
   const actionBanner = buildSignalActionBanner(s);
-  const sigBadges = (s.volBuild || s.meanReversion) ? `
+  const hasExtraBadges = s.volBuild || s.meanReversion || (s.consUpDays >= 3);
+  const sigBadges = hasExtraBadges ? `
     <div class="signal-extra-badges">
-      ${s.volBuild      ? '<span class="badge badge-vol-build">VOL BUILD</span>' : ''}
-      ${s.meanReversion ? '<span class="badge badge-reversal">REVERSAL</span>'  : ''}
+      ${s.volBuild                 ? '<span class="badge badge-vol-build">VOL BUILD</span>' : ''}
+      ${s.meanReversion            ? '<span class="badge badge-reversal">REVERSAL</span>'  : ''}
+      ${(s.consUpDays||0) >= 3     ? `<span class="badge badge-up-days">${s.consUpDays} UP DAYS</span>` : ''}
     </div>` : '';
 
   return `
@@ -1363,29 +1395,28 @@ function computeScoreBreakdown(s) {
   else if (s.rsi > 65 && s.rsi <= 75) rsiPts = 10;
   else if (s.rsi < 45) rsiPts = 15;
 
-  const maPts = s.price > s.ma20 ? 10 : 0;
-
-  let newsPts = 0, sentPts = 0;
-  if (s.news) {
-    const ageH = (Date.now() - new Date(s.news.created_at).getTime()) / 3600000;
-    if (s.hasNegNews) { sentPts = -10; }
-    else if (ageH < 4) newsPts = 20;
-    else if (ageH < 12) newsPts = 10;
-  }
-
+  const maPts      = s.price > s.ma20 ? 10 : 0;
   const volBuildPts = s.volBuild ? 15 : 0;
   const meanRevPts  = s.meanReversion ? 20 : 0;
-  const newsAge     = s.news ? newsTimeAgo(s.news) : null;
+
+  // Use pre-computed values from signal, fall back to recomputing
+  const rsVsSPY       = s.rsVsSPY       ?? (s.todayChange - (s.spyChange || 0));
+  const relStrPts     = s.relStrengthPts ?? (rsVsSPY >= 2 ? 15 : rsVsSPY >= 1 ? 10 : rsVsSPY > 0 ? 5 : 0);
+  const consUpDays    = s.consUpDays     ?? 0;
+  const consUpPts     = s.consUpPts      ?? (consUpDays >= 4 ? 15 : consUpDays === 3 ? 10 : consUpDays === 2 ? 5 : 0);
+
+  const spySign = (s.spyChange || 0) >= 0 ? '+' : '';
+  const rsSign  = rsVsSPY >= 0 ? '+' : '';
 
   return [
-    { key: 'vol',    short: 'vol',      label: `Volume spike (${s.volRatio.toFixed(1)}× avg)`,                                 pts: volPts,     fired: volPts > 0 },
-    { key: 'mom',    short: 'momentum', label: `Price momentum (${s.todayChange>=0?'+':''}${s.todayChange.toFixed(1)}% today)`, pts: momPts,     fired: momPts > 0 },
-    { key: 'rsi',    short: 'RSI',      label: `RSI position (${s.rsi.toFixed(0)})`,                                           pts: rsiPts,     fired: rsiPts > 0 },
-    { key: 'ma',     short: 'MA',       label: `Above 20-day MA ($${s.ma20.toFixed(2)})`,                                      pts: maPts,      fired: maPts > 0 },
-    { key: 'news',   short: 'news',     label: newsAge ? `Recent news (${newsAge})` : 'Recent news',                           pts: newsPts,    fired: newsPts > 0 },
-    { key: 'sent',   short: 'sentiment',label: s.hasNegNews ? 'News sentiment (negative)' : 'News sentiment',                  pts: sentPts,    fired: false },
-    { key: 'vbuild', short: 'vol build',label: `Volume build (3 days rising)`,                                                 pts: volBuildPts, fired: volBuildPts > 0 },
-    { key: 'rev',    short: 'reversal', label: `Mean reversion`,                                                               pts: meanRevPts, fired: meanRevPts > 0 },
+    { key: 'vol',    short: 'vol',       label: `Volume spike (${s.volRatio.toFixed(1)}× avg)`,                                 pts: volPts,     fired: volPts > 0 },
+    { key: 'mom',    short: 'momentum',  label: `Price momentum (${s.todayChange>=0?'+':''}${s.todayChange.toFixed(1)}% today)`, pts: momPts,     fired: momPts > 0 },
+    { key: 'rsi',    short: 'RSI',       label: `RSI position (${s.rsi.toFixed(0)})`,                                           pts: rsiPts,     fired: rsiPts > 0 },
+    { key: 'ma',     short: 'MA',        label: `Above 20-day MA ($${s.ma20.toFixed(2)})`,                                      pts: maPts,      fired: maPts > 0 },
+    { key: 'relstr', short: 'rel str',   label: `Relative strength (${rsSign}${rsVsSPY.toFixed(1)}% vs SPY ${spySign}${(s.spyChange||0).toFixed(1)}%)`, pts: relStrPts, fired: relStrPts > 0 },
+    { key: 'consup', short: 'up days',   label: `Consecutive up days (${consUpDays} day${consUpDays !== 1 ? 's' : ''})`,        pts: consUpPts,  fired: consUpPts > 0 },
+    { key: 'vbuild', short: 'vol build', label: `Volume build (3 days rising)`,                                                 pts: volBuildPts, fired: volBuildPts > 0 },
+    { key: 'rev',    short: 'reversal',  label: `Mean reversion`,                                                               pts: meanRevPts, fired: meanRevPts > 0 },
   ];
 }
 
@@ -1532,6 +1563,22 @@ async function openStockModal(ticker) {
       todayChange: 0, signal: 'WATCH', news: null
     };
 
+    // Always recompute new signal values from fresh bars
+    let modalConsUpDays = 0;
+    for (let i = sorted.length - 1; i > 0; i--) {
+      if (sorted[i].c > sorted[i-1].c) modalConsUpDays++;
+      else break;
+    }
+    const modalConsUpPts  = modalConsUpDays >= 4 ? 15 : modalConsUpDays === 3 ? 10 : modalConsUpDays === 2 ? 5 : 0;
+    const modalSpyChg     = state.spyChange || 0;
+    const modalRsVsSPY    = (stock.todayChange || 0) - modalSpyChg;
+    const modalRelStrPts  = modalRsVsSPY >= 2 ? 15 : modalRsVsSPY >= 1 ? 10 : modalRsVsSPY > 0 ? 5 : 0;
+    stock.consUpDays     = modalConsUpDays;
+    stock.consUpPts      = modalConsUpPts;
+    stock.spyChange      = modalSpyChg;
+    stock.rsVsSPY        = modalRsVsSPY;
+    stock.relStrengthPts = modalRelStrPts;
+
     const chgCls  = stock.todayChange >= 0 ? 'change-pos' : 'change-neg';
     const chgSign = stock.todayChange >= 0 ? '▲' : '▼';
     const durBadge = durBadgeClass(stock.duration);
@@ -1618,6 +1665,21 @@ async function openStockModal(ticker) {
           (stock.volTrend || 'normal') === 'spike'    ? '⚡ Spike (today only)' :
                                                          'Normal'
         }</span>
+      </div>
+      <div class="signal-row">
+        <span class="signal-key">vs Market</span>
+        <span class="signal-val">${modalRsVsSPY >= 0
+          ? `Outperforming SPY by ${modalRsVsSPY.toFixed(1)}%`
+          : `Underperforming SPY by ${Math.abs(modalRsVsSPY).toFixed(1)}%`}
+          <span style="color:var(--muted);font-size:11px"> (SPY ${modalSpyChg>=0?'+':''}${modalSpyChg.toFixed(1)}%)</span>
+        </span>
+      </div>
+      <div class="signal-row">
+        <span class="signal-key">Price Trend</span>
+        <span class="signal-val">${modalConsUpDays >= 2
+          ? `Up ${modalConsUpDays} days in a row`
+          : modalConsUpDays === 1 ? 'Up 1 day'
+          : 'No consecutive up days'}</span>
       </div>
       ${stock.meanReversion ? `<div class="signal-row">
         <span class="signal-key">Mean Reversion</span>
@@ -2499,13 +2561,14 @@ Performance by signal score at purchase:
   report += `=== CURRENT SCORING FORMULA (for Claude's reference) ===
 
 Scoring System (0–100 points, capped at 100):
-  Volume spike:     0–30 pts (1.5x=10, 2x=20, 3x+=30)
-  Volume build:     0–15 pts (3 consecutive days rising + today >=1.3x avg)
-  Price momentum:   0–20 pts (2-4%=10, 4%+=20)
-  RSI position:     0–20 pts (50-65=20, 65-75=10, <45 rising=15)
-  Above 20-day MA:  10 pts
-  Recent news:      0–20 pts (<4hrs=20, 4-12hrs=10, negative=-10)
-  Mean reversion:   0–20 pts (price 8-15% below MA, RSI<45, RSI turning up)
+  Volume spike:        0–30 pts (1.5x=10, 2x=20, 3x+=30)
+  Volume build:        0–15 pts (3 consecutive days rising + today >=1.3x avg)
+  Price momentum:      0–20 pts (2-4%=10, 4%+=20)
+  RSI position:        0–20 pts (50-65=20, 65-75=10, <45 rising=15)
+  Above 20-day MA:     10 pts
+  Relative strength:   0–15 pts (outperform SPY by >0%=5, >1%=10, >2%=15)
+  Consecutive up days: 0–15 pts (2 days=5, 3 days=10, 4+ days=15)
+  Mean reversion:      0–20 pts (price 8-15% below MA, RSI<45, RSI turning up)
 
 Labels: 70–100=STRONG BUY | 50–69=SOFT BUY | 20–49=WATCH | <20=excluded
 
@@ -2614,7 +2677,8 @@ function renderSettingsTab() {
         <div class="score-row"><span>Price momentum (2–4%+)</span><span>0–20 pts</span></div>
         <div class="score-row"><span>RSI position</span><span>0–20 pts</span></div>
         <div class="score-row"><span>Above 20-day MA</span><span>+10 pts</span></div>
-        <div class="score-row"><span>Recent news boost</span><span>0–20 pts</span></div>
+        <div class="score-row"><span>Relative strength vs market</span><span>0–15 pts</span></div>
+        <div class="score-row"><span>Consecutive up days</span><span>0–15 pts</span></div>
         <div class="score-row"><span>Mean reversion setup</span><span>+20 pts</span></div>
         <div class="score-row score-row-total"><span>Total (capped)</span><span>100 pts</span></div>
         <div class="score-row"><span class="score-label-strong">STRONG BUY</span><span>70–100</span></div>
