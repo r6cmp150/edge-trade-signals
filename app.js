@@ -915,7 +915,7 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
   score = Math.max(0, Math.min(100, score));
   const risk = calcRiskScore(price, atr, rsi, volRatio, hasNegNews);
   const priceRange = price <= 3 ? '$1–$3' : price <= 9 ? '$4–$9' : '$10–$20';
-  const signal = score >= 70 ? 'STRONG BUY' : score >= 50 ? 'SOFT BUY' : 'WATCH';
+  const signal = score >= 80 ? 'STRONG BUY' : score >= 50 ? 'SOFT BUY' : 'WATCH';
 
   return {
     ticker, company: COMPANY_NAMES[ticker] || ticker,
@@ -2528,10 +2528,9 @@ Performance by duration classification:
   ${durStats('WEEK','Est. 5-7 Days')}
 
 Performance by signal score at purchase:
-  ${scoreStats(50,60)}
-  ${scoreStats(61,70)}
-  ${scoreStats(71,80)}
-  ${scoreStats(81,100)}
+  ${scoreStats(20,49)}
+  ${scoreStats(50,79)}
+  ${scoreStats(80,100)}
 
 === FULL TRADE HISTORY ===
 
@@ -2570,7 +2569,7 @@ Scoring System (0–100 points, capped at 100):
   Consecutive up days: 0–15 pts (2 days=5, 3 days=10, 4+ days=15)
   Mean reversion:      0–20 pts (price 8-15% below MA, RSI<45, RSI turning up)
 
-Labels: 70–100=STRONG BUY | 50–69=SOFT BUY | 20–49=WATCH | <20=excluded
+Labels: 80–100=STRONG BUY | 50–79=SOFT BUY | 20–49=WATCH | <20=excluded
 
 Risk Score (1–10):
   Base by price tier: $1–$3=6, $4–$9=4, $10–$20=3
@@ -2681,8 +2680,8 @@ function renderSettingsTab() {
         <div class="score-row"><span>Consecutive up days</span><span>0–15 pts</span></div>
         <div class="score-row"><span>Mean reversion setup</span><span>+20 pts</span></div>
         <div class="score-row score-row-total"><span>Total (capped)</span><span>100 pts</span></div>
-        <div class="score-row"><span class="score-label-strong">STRONG BUY</span><span>70–100</span></div>
-        <div class="score-row"><span class="score-label-soft">SOFT BUY</span><span>50–69</span></div>
+        <div class="score-row"><span class="score-label-strong">STRONG BUY</span><span>80–100</span></div>
+        <div class="score-row"><span class="score-label-soft">SOFT BUY</span><span>50–79</span></div>
         <div class="score-row"><span class="score-label-watch">WATCH</span><span>20–49</span></div>
       </div>
     </div>
