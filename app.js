@@ -166,7 +166,357 @@ const STOCK_UNIVERSES = {
   'ALBO','ALBY','ALRS','ALTG','ALTM','ALUR','ALYA','AMBC','AMMO','ANTE',
   'ANTH','AOGI','AOUT','APGE','ARPO','ASRV','ATAX','AYLA','AYRG','NEPT'
   ])],
-  BIOTECH: [],
+  BIOTECH: [...new Set([
+  // ── A: clinical-stage, small pharma ───────────────────────────────
+  'AADI','ABCL','ABEO','ABIO','ABUS','ACAD','ACER','ACHV','ACOR','ACRX',
+  'ACRS','ACST','ACET','ADCT','ADGI','ADMA','ADMP','ADMS','ADPT','ADTX',
+  'ADVM','ADXN','AFMD','AGIO','AGRX','AHCO','AIMD','AKBA','AKLI','AKRO',
+  'AKYA','ALBO','ALEC','ALGS','ALIM','ALHC','ALLK','ALNY','ALPN','ALRN',
+  'ALVR','AMEH','AMPH','AMRN','AMRS','AMRX','ANIK','ANNX','ANTX','ANVS',
+  'APDN','APGE','APLS','APLT','APTO','APVO','APYX','AQST','ARAV','ARBE',
+  'ARCT','ARDX','ARGX','ARQT','ARWR','ARVN','ASLN','ASMB','ASND','ASRT',
+  'ATAI','ATHA','ATNF','ATRC','ATRS','ATXI','ATXS','AURA','AUPH','AVDL',
+  'AVEO','AVIR','AVNS','AVRO','AVXL','AXDX','AXGN','AXLA','AXNX','AXSM',
+  'AYLA','AYTU','AZRX',
+  // ── B ────────────────────────────────────────────────────────────
+  'BCAB','BCEL','BCYC','BCRX','BDTX','BEAM','BFRI','BGNE','BHVN','BFLY',
+  'BIOL','BIVI','BLCM','BLDE','BLFS','BLPH','BLRX','BLTE','BLUE','BNGO',
+  'BNTC','BNTX','BOLD','BPMC','BPTH','BRKR','BRTX','BTAI','BXRX','BYSI',
+  // ── C ────────────────────────────────────────────────────────────
+  'CAPR','CARA','CASI','CBMG','CBPO','CCCC','CCXI','CDMO','CDNA','CEMI',
+  'CERT','CGEM','CGEN','CGON','CKPT','CLBS','CLSD','CLVS','CLPT','CMPS',
+  'CNCE','CNMD','CNTX','COCP','CODX','CPHI','CPRX','CRBU','CRDF','CRNX',
+  'CRSP','CRTX','CRVS','CSII','CTLT','CTMX','CTXR','CYCN','CYTO','CYTX',
+  // ── D ────────────────────────────────────────────────────────────
+  'DBVT','DCPH','DCTH','DFFN','DMAC','DNLI','DOVA','DRMA','DVAX','DXCM',
+  'DYAI',
+  // ── E ────────────────────────────────────────────────────────────
+  'EDIT','EDSA','ELOX','ENOB','ENOV','EPZM','ERAS','ESPR','ETNB','EVOK',
+  'EWTX','EXAS','EXEL',
+  // ── F ────────────────────────────────────────────────────────────
+  'FBIO','FATE','FBTX','FENC','FGEN','FHTX','FLGT','FNCH','FOLD','FREQ',
+  'FULC',
+  // ── G ────────────────────────────────────────────────────────────
+  'GBIO','GERN','GKOS','GLMD','GMAB','GNMK','GOVX','GRPH','GRTS','GRTX',
+  'GTHX',
+  // ── H ────────────────────────────────────────────────────────────
+  'HALO','HARP','HCAT','HEPA','HIMS','HOOK','HRMY','HROW','HRTX','HTGM',
+  'HZNP',
+  // ── I ────────────────────────────────────────────────────────────
+  'IBRX','IBIO','ICAD','IDYA','ILMN','IMAB','IMGU','IMMP','IMMU','IMNM',
+  'IMRX','IMTX','IMVT','INAB','INCY','INFI','INMD','INOG','INSP','INSM',
+  'IONS','IOVA','IPIX','IPSC','ISEE','ISRG','ITCI','ITRM','IVAC','ITOS',
+  // ── J-K ──────────────────────────────────────────────────────────
+  'JANX','JAZZ','JNCE','KALA','KDNY','KMPH','KNSA','KROS','KRYS','KRTX',
+  'KYMR','KPTI',
+  // ── L ────────────────────────────────────────────────────────────
+  'LASR','LBPH','LEGN','LENZ','LGND','LHCG','LIFE','LIQT','LMNL','LNTH',
+  'LODE','LOGC','LPCN','LQDA','LUNA','LUMO','LUNG','LYEL','LYRA',
+  // ── M ────────────────────────────────────────────────────────────
+  'MACK','MASI','MBIO','MBRX','MCRB','MDGL','MDXG','MEIP','MELA','MESO',
+  'MERUS','MGTA','MGTX','MGNX','MIRM','MNKD','MNMD','MNOV','MORF','MREO',
+  'MRNA','MRSN','MRUS','MMSI',
+  // ── N ────────────────────────────────────────────────────────────
+  'NARI','NBTX','NDRA','NERV','NKTR','NMRA','NNOX','NOVN','NPCE','NRIX',
+  'NRXP','NSTG','NTRB','NTLA','NUVL','NUVN','NVCN','NVCR','NVNS','NVRO',
+  'NVST','NVTA','NWBO','NXTC',
+  // ── O ────────────────────────────────────────────────────────────
+  'OCGN','OCRX','OCUL','OCUP','OFIX','OGEN','OMCL','OMGA','OMER','ONVO',
+  'OPTH','OPTN','ORIC','ORGO','ORMP','OTIC','OVID','OWLT','OYST',
+  // ── P ────────────────────────────────────────────────────────────
+  'PACB','PASG','PAVM','PBYI','PCVX','PDCO','PDYN','PHAT','PHIO','PHVS',
+  'PIRS','PLRX','PMVP','POLA','PODD','PRAX','PRGO','PRLD','PROG','PRPH',
+  'PRPO','PRQR','PRTA','PSNL','PTCT','PTGX','PULM','PRTK','PDSB','PYXS',
+  // ── Q-R ──────────────────────────────────────────────────────────
+  'QLGN','QNRX','QURE','RBGV','RCKT','RCUS','RDUS','REGN','RGEN','RGLS',
+  'RIGL','RKDA','RLMD','RLAY','RLYB','RMED','RMMB','RPHM','RPID','RUBY',
+  'RVMD','RVNC','RVPH','RXRX','RARE',
+  // ── S ────────────────────────────────────────────────────────────
+  'SANA','SEER','SELB','SGEN','SGMO','SIGA','SLDB','SNDX','SOLID','SPPI',
+  'SRNE','SRPT','SRRK','STAA','STOK','STRO','STSA','STTK','SURF','SVRA',
+  'SYBX',
+  // ── T ────────────────────────────────────────────────────────────
+  'TALO','TARA','TARO','TARS','TBPH','TCRR','TCRX','TELA','TGTX','THMO',
+  'TILS','TLCR','TNDM','TNXP','TRMR','TRVN','TSHA','TSIN','TSVT','TTOO',
+  'TTPH','TUPH','TVTX','TWST','TXMD','TYRA',
+  // ── U-Z ──────────────────────────────────────────────────────────
+  'UMRX','UROS','UTHR','VCNX','VCYT','VBIV','VERA','VERV','VNDA','VRNA',
+  'VRTX','VNRX','XBIO','XNCR','XOMA','XTNT','XXII','YMAB','YTRA','ZNTL',
+  'ZSAN','ZYBT',
+  // ── Genomics / CRISPR / RNA ──────────────────────────────────────
+  'CRSP','NTLA','EDIT','BEAM','SGMO','BLUE','RCKT','QURE','SOLID','SLDB',
+  'VERV','VRNA','GRPH','OMIC','KDNY','IMCR','ALNY','ARWR','IONS','PTCT',
+  'SRPT','BMRN','RARE','FOLD','KRYS','DNLI',
+  // ── Medical devices ──────────────────────────────────────────────
+  'ABMD','ALGN','ANGO','ATRC','AVNS','AXDX','AXGN','AXNX','BFLY','BRKR',
+  'CLPT','CNMD','CSII','CTSO','DXCM','ENOV','EXAS','GKOS','IART','IDXX',
+  'ILMN','INMD','INSP','IRTC','ISRG','LMAT','LUNG','MASI','MDXG','MMSI',
+  'NARI','NDRA','NNOX','NVST','OFIX','OMCL','OSUR','PODD','RGEN','STAA',
+  'TNDM',
+  // ── Health IT / digital health ───────────────────────────────────
+  'ACCD','AMWL','DOCS','GDRX','HCAT','HIMS','HQY','ICLR','LIVN','MDRX',
+  'MEDP','ONEM','OPCH','OPRX','PGNY','RCM','SYNH','TDOC','WELL',
+  // ── Specialty pharma / generics ──────────────────────────────────
+  'ALKS','AMRN','AMRS','AMRX','CPIX','CPRX','ENDP','HRMY','HROW','LGND',
+  'LPCN','LQDA','LXRX','MNKD','PAHC','PRGO','PRTK','RDUS','SPPI','TARO',
+  // ── Oncology ─────────────────────────────────────────────────────
+  'BGNE','BOLD','BPMC','CLDX','CORT','CTLT','CTMX','DCPH','DVAX','DYAI',
+  'ENOB','EPZM','ERAS','GERN','GTHX','GRTS','GRTX','HALO','IBRX','IDYA',
+  'IMGN','IMMU','INCY','INSM','IOVA','KPTI','KRYS','KYMR','LBPH','LEGN',
+  'LOGC','LPCN','LQDA','LYEL','MDGL','MERUS','MIRM','MORF','MREO','NBTX',
+  'NTLA','NUVL','NVCR','NVRO','OMGA','OMER','OPTN','ORIC','PBYI','PCVX',
+  'PRAX','PRLD','RCKT','RCUS','RGLS','RIGL','RKDA','RUBY','RVMD','SNDX',
+  'SOLID','SRPT','SRRK','SURF','SVRA','TBPH','TCRR','TCRX','TGTX','TILS',
+  'TLCR','TRMR','TSVT','TTOO','TUPH','TVTX','VCYT','VERA',
+  // ── CNS / neuroscience ───────────────────────────────────────────
+  'ACAD','ACER','ADMS','AKLI','AKYA','ALDX','ALKS','ALVR','AMPH','ANNX',
+  'ANVS','APRE','ARDX','ARQT','ASRT','ATHA','ATXS','AUPH','AVXL','AXSM',
+  'BFRI','BIOL','BTAI','CAPR','CDTX','CERE','CMPS','CNCE','COCP','CRTX',
+  'CYCN','EVOK','FREQ','HARP','INFI','IONS','ITCI','JANX','KALA','KMPH',
+  'KRYS','LBPH','LGND','LIQT','LMNL','LNTH','LODE','LOGC','LPCN','LYRA',
+  'MACK','MBIO','MBRX','MCRB','MEIP','MIRM','MNKD','MNMD','MNOV','MORF',
+  'NMRA','PRAX','PRLD','PSNL','PTGX','PULM','STTK','STOK','TXMD','ATHA',
+  // ── Immunology / autoimmune ───────────────────────────────────────
+  'AGIO','AHCO','ALLK','APLS','APVO','ARGX','ARVN','AUPH','AVDL','AVXL',
+  'AXLA','BXRX','CCCC','CCXI','CGEN','CGEM','CKPT','CNCE','COCP','CRIN',
+  'CYCN','CYTO','EVOK','HARP','ITOS','ITCI','KALA','LYRA','MBRX','MEIP',
+  'OMGA','OPTN',
+  // ── Gene therapy / cell therapy ──────────────────────────────────
+  'ABEO','BLCM','BLUE','BPTH','BRTX','CAPR','CBMG','CNTX','CRBU','DNLI',
+  'FATE','FHTX','GBIO','GOVX','GRPH','LEGN','LYEL','OMIC','PASG','SANA',
+  'SLDB','TWST','VCNX','BLUE','RCKT','QURE',
+  // ── Rare / orphan disease ─────────────────────────────────────────
+  'ACAD','AGIO','AGTC','AKRO','ALEC','ALGS','ALNY','ALXO','ANAB','ANIP',
+  'APDN','APLT','ARCT','ATAI','ATRA','AVEO','AVIR','AVRO','BCEL','BCYC',
+  'BDTX','BHVN','BLCM','BLTE','BPMC','BRTX','CERE','CGON',
+  // ── Infectious disease / vaccines ────────────────────────────────
+  'ADMA','ADGI','AXSM','CODX','DVAX','DYAI','ENOB','GILD','GOVX','IBIO',
+  'INO','MRNA','BNTX','NVAX','OCGN','REGN','SIGA','SRNE','VBIV','VRTX',
+  'ABBV','AMGN','BIIB',
+  // ── Diagnostics & genomics ───────────────────────────────────────
+  'AXDX','AXGN','BFLY','BRKR','CDNA','CEMI','DXCM','EXAS','GKOS','HTGM',
+  'IART','ICAD','IDXX','ILMN','INMD','INSP','ISRG','LMAT','LUNG','MASI',
+  'MDXG','MMSI','NARI','NDRA','NNOX','NSTG','NVST','OFIX','OMCL','OSUR',
+  'PACB','PODD','RGEN','SEER','STAA','TNDM',
+  // ── Mental health / psychedelics ─────────────────────────────────
+  'ATAI','CMPS','MNMD','MIND','STOK','STTK',
+  // ── Cardio / metabolic / endocrine ───────────────────────────────
+  'AKBA','AKRO','ARDX','ARQT','ARWR','ASND','ATHA','BHVN','CRVS','DCPH',
+  'FOLD','GLMD','GMAB','HRTX','RARE',
+  // ── Ophthalmology ────────────────────────────────────────────────
+  'ADVM','AXNX','CRNX','GKOS','ISEE','LENZ','OCUL','OPTH','RCKT','RGNX',
+  // ── Dermatology ──────────────────────────────────────────────────
+  'ACRS','ACRX','DRMA','FBTX','ITCI','MELA',
+  // ── Core legacy FDA-play small-caps ──────────────────────────────
+  'ATOS','CTIC','JAGX','SAVA','VBIV','SEEL','BLRX','NRXP','MMAT','NERV',
+  'PTGX','PULM','EDSA','ELOX','IDRA','IMVT','ITOS','IVAC','JNCE','KALA',
+  'KRTX','LIQT','LMNL','LUNA','LYRA','MACK','MBIO','MBRX','MCRB','MDXG',
+  'MEIP','OCRX','OCUP','ONVO','ORGO','ORMP','OVID','OYST','PHAT','PHIO',
+  'PIRS','PLRX','PMVP','POLA','PRPH','PRQR','PRTA','PSNL','RUBY','RVNC',
+  'RVPH','RXRX','SPPI','AGEN','ADTX','AKBA','ATNF','AYTU','AZRX','BCAB',
+  'BNGO','BNTC','AMRN','ANIX','ANVS','APRE','ARDX','ASRT','ATXI','AUPH',
+  'BFRI','BIOL','BTAI','BXRX','CARA','CASI','CCXI','CDTX','CGEM','CGEN',
+  'CKPT','CLBS','CLSD','CLVS','CMPS','CNCE','COCP','CODX','CPHI','CRDF',
+  'CRNX','CRTX','CRVS','CTXR','CYCN','CYTO','DFFN','GNPX','INFI','KMPH',
+  'MYOV','NBSE','PRPO','QLGN','ZSAN','OGEN','BLPH','OBSV','CIDM','CYTH',
+  'SIGA','VVPR','OCUL','PDSB','ALBT','CPIX','HCWB','CHRS','MTSL','WTER',
+  'VNRX','UAVS','RILY','LXRX','ATOS','CTIC','PAYA','SRNE','JAGX','SAVA',
+  'NCPL','AEYE',
+  // ── Additional unique picks ───────────────────────────────────────
+  'ACRV','ACET','ACGS','ACHV','ABSI','NSTG','GAIN','GALT',
+  'AURA','ALDX','ALNA','AMAG','ANIK','ANNX','APGE','APLS','ASMB',
+  'ASND','BPTH','BIVI','CAPR','CCCC','CDNA','CDMO','CERT','CLPT',
+  'CNTX','CRBU','DCPH','DMAC','DRMA','EWTX','FBTX','FHTX','FNCH',
+  'GBIO','GLMD','GMAB','GTHX','HGEN','HRTX','HTGM','IMTX','INAB',
+  'ITRM','KROS','LEGN','LENZ','LHCG','MGNX','MNOV','NDRA','NMRA',
+  'NOVN','NTRB','NRIX','NVTA','OPTH','ORIC','OWLT','PASG','PHVS',
+  'PSNL','PYXS','QNRX','RCUS','RVMD','SNDX','SRRK','STOK','STTK',
+  'TWST','ACOR','ACHV','ACER','ALRN','AVDL','AVIR','AVRO','ARGX',
+  'ARVN','AXNX','RGNX','DOVA','CERT','ENOV','ALGN','IRTC','HQY',
+  'ICLR','MEDP','SYNH','LIVN','LHCG','ACCD','AMWL','DOCS','GDRX',
+  'PGNY','RCM','TDOC','WELL','ONEM','OPCH','OPRX'
+  ])],
+  'BLRX','NRXP','MMAT','NERV','PTGX','PULM','EDSA','ELOX','IDRA','IMVT',
+  'ITOS','IVAC','JNCE','KALA','KRTX','LIQT','LMNL','LUNA','LYRA','MACK',
+  'MBIO','MBRX','MCRB','MDXG','MEIP','OCRX','OCUP','ONVO','ORGO','ORMP',
+  'OVID','OYST','PHAT','PHIO','PIRS','PLRX','PMVP','POLA','PRAX','PRLD',
+  'PROG','PRPH','PRQR','PRTA','PSNL','RUBY','RVNC','RVPH','RXRX','SPPI',
+  'ADMA','AGEN','ADTX','AKBA','ATNF','AYTU','AZRX','BCAB','BNGO','BNTC',
+  'AMRN','ANIX','ANVS','APRE','ARDX','ARQT','ASRT','ATHA','ATXI','AUPH',
+  'AVXL','AXLA','BFRI','BIOL','BTAI','BXRX','CARA','CASI','CCXI','CDTX',
+  'CGEM','CGEN','CKPT','CLBS','CLSD','CLVS','CMPS','CNCE','COCP','CODX',
+  'CPHI','CRDF','CRNX','CRTX','CRVS','CTXR','CYCN','CYTO','DFFN','GNPX',
+  'INFI','KMPH','MYOV','NBSE','PRPO','QLGN','ZSAN','OGEN','BLPH','OBSV',
+  'CIDM','CYTH','SIGA','VVPR','OCUL','PDSB','ALBT','CPIX','HCWB','CHRS',
+  // ── A-tickers: clinical-stage not previously listed ───────────────
+  'AADI','ACER','ACHV','ACOR','ACRX','ACRS','ACST','ADCT','ADGI','ADMS',
+  'ADMP','ADPT','ADVM','ADXN','AFMD','AGIO','AGRX','AKLI','AKRO','AKYA',
+  'ALBO','ALEC','ALGS','ALIM','ALHC','ALLK','ALRN','ALVR','AMEH','AMPH',
+  'ANIK','ANNX','ANTX','APGE','APLS','APTO','APVO','APYX','AQST','ARAV',
+  'ARCT','ARWR','ASLN','ASMB','ASND','ATAI','ATRC','ATRS','ATXS','AVDL',
+  'AVEO','AVIR','AVNS','AVRO','AXDX','AXGN','AXSM','AYLA','ACAD','AGTC',
+  'AKRO','ALEC','ALGS','ALPN','ALXO','ANAB','ANIP','APDN','APLT','AQST',
+  'ARBE','ATRA','AVRO','ABCL','ABIO','ABUS','ADAP','AHCO','AIMD',
+  // ── B-tickers ────────────────────────────────────────────────────
+  'BCAB','BCEL','BCYC','BCRX','BDTX','BGNE','BHVN','BLCM','BLDE','BLFS',
+  'BLTE','BOLD','BPMC','BRTX','BYSI','BFLY','BRKR','BMRN','BEAM','BLUE',
+  'BNTX','BPMC','BRTX','BTAI','BXRX','BHVN','BGNE','BCYC',
+  // ── C-tickers ────────────────────────────────────────────────────
+  'CBMG','CBPO','CDMO','CEMI','CGON','CTLT','CTMX','CYTX','CERE','CRIN',
+  'CRSP','CSII','CNMD','CERT','CLDX','CORT',
+  // ── D-tickers ────────────────────────────────────────────────────
+  'DBVT','DCPH','DCTH','DMAC','DNLI','DOVA','DRMA','DVAX','DYAI','DXCM',
+  // ── E-tickers ────────────────────────────────────────────────────
+  'EDIT','ENOB','EPZM','ERAS','ESPR','ETNB','EVOK','EWTX','EXAS','EXEL',
+  // ── F-tickers ────────────────────────────────────────────────────
+  'FBIO','FENC','FGEN','FLGT','FOLD','FREQ','FULC','FATE',
+  // ── G-tickers ────────────────────────────────────────────────────
+  'GBIO','GERN','GKOS','GNMK','GOVX','GRPH','GRTS','GRTX',
+  // ── H-tickers ────────────────────────────────────────────────────
+  'HALO','HARP','HEPA','HOOK','HRMY','HROW','HCAT','HIMS',
+  // ── I-tickers ────────────────────────────────────────────────────
+  'IBRX','ICAD','IDYA','IMAB','IMGU','IMMP','IMMU','IMNM','IMRX','IMTX',
+  'INCY','INMD','INOG','INSP','INSM','IONS','IOVA','IPIX','IPSC','ISEE',
+  'ISRG','ITCI',
+  // ── J-L tickers ──────────────────────────────────────────────────
+  'JANX','JAZZ','JNCE','KALA','KDNY','KMPH','KNSA','KRYS','KRTX','KYMR',
+  'KPTI','LASR','LBPH','LGND','LIFE','LIQT','LMNL','LNTH','LODE','LOGC',
+  'LPCN','LQDA','LUNA','LUMO','LYEL','LYRA',
+  // ── M-tickers ────────────────────────────────────────────────────
+  'MACK','MBIO','MBRX','MCRB','MDGL','MDXG','MEIP','MELA','MESO','MERUS',
+  'MGTA','MGTX','MIRM','MNKD','MNMD','MORF','MREO','MRNA','MRSN','MRUS',
+  'MASI',
+  // ── N-O tickers ──────────────────────────────────────────────────
+  'NBTX','NERV','NKTR','NNOX','NRXP','NSTG','NTLA','NUVL','NVCR','NVRO',
+  'NWBO','NXTC','NPCE','NARI','NUVN','OCRX','OCUP','OCGN','OCUL','ONVO',
+  'ORGO','ORMP','OTIC','OVID','OYST','OFIX','OPTN','OMCL',
+  // ── P-Q tickers ──────────────────────────────────────────────────
+  'PACB','PAVM','PBYI','PCVX','PDCO','PDYN','PHAT','PHIO','PIRS','PLRX',
+  'PMVP','POLA','PODD','PRAX','PRGO','PRLD','PROG','PRPH','PRPO','PRQR',
+  'PRTA','PSNL','PTCT','PTGX','PULM','PRTK','PDSB','QURE','QLGN',
+  // ── R-tickers ────────────────────────────────────────────────────
+  'RBGV','RCKT','RDUS','RGEN','RGLS','RIGL','RKDA','RLMD','RLYB','RMED',
+  'RMMB','RPHM','RPID','RUBY','RVNC','RVPH','RXRX','RLAY','RARE',
+  // ── S-tickers ────────────────────────────────────────────────────
+  'SANA','SEER','SELB','SGMO','SIGA','SLDB','SOLID','SPPI','SRPT','STRO',
+  'STSA','SURF','SVRA','SYBX','SRRK',
+  // ── T-tickers ────────────────────────────────────────────────────
+  'TALO','TARA','TARS','TBPH','TCRR','TCRX','TELA','TGTX','THMO','TILS',
+  'TLCR','TNDM','TNXP','TRMR','TRVN','TSHA','TSIN','TSVT','TTOO','TTPH',
+  'TUPH','TVTX','TXMD','TYRA','TARO',
+  // ── U-Z tickers ──────────────────────────────────────────────────
+  'UMRX','UROS','UTHR','VCNX','VCYT','VERA','VERV','VNDA','VRNA','VNRX',
+  'VBIV','XBIO','XNCR','XOMA','XTNT','XXII','YMAB','YTRA','ZNTL','ZSAN',
+  'ZYBT','XXII','XOMA','XNCR',
+  // ── Genomics / CRISPR / RNA therapies ────────────────────────────
+  'CRSP','NTLA','EDIT','BEAM','SGMO','BLUE','RCKT','QURE','SOLID','SLDB',
+  'VERV','VRNA','GRPH','OMIC','KDNY','IMCR','ALNY','ARWR','IONS','PTCT',
+  'SRPT','BMRN','RARE','FOLD','KRYS','DNLI','IMVT',
+  // ── Medical devices ──────────────────────────────────────────────
+  'ABMD','APYX','ATRC','AVNS','AXDX','AXGN','BFLY','BRKR','CNMD','CSII',
+  'CTSO','DXCM','EXAS','GKOS','IART','ILMN','INMD','INSP','ISRG','LMAT',
+  'LUNG','MASI','MDXG','MMSI','NARI','NNOX','NVST','OFIX','OMCL','OSUR',
+  'PODD','RGEN','STAA','TNDM','ENOV','ALGN','IRTC','NVCN','NVNS','IEHC',
+  'ANGO','HAYN','HEPA','IMOS','INFU','INVA','NUVA','NPCE','NRIX',
+  // ── Health tech / digital health ─────────────────────────────────
+  'ACCD','AMWL','DOCS','GDRX','HCAT','HQY','MDRX','ONEM','OPCH','OPRX',
+  'PGNY','RCM','TDOC','WELL','LIVN','OMCL','HIMS','IRTC','ALGN',
+  // ── Specialty pharma ─────────────────────────────────────────────
+  'AMRN','AMRS','AMRX','ALKS','ENDP','PRTK','LNTH','LXRX','CPRX','HRMY',
+  'LGND','LPCN','LQDA','PAHC','PRGO','RDUS','SPPI','MNKD','TARO','HZNP',
+  'INCY','EXEL','SGMO','AKBA','CPIX',
+  // ── Oncology: targeted / immuno ──────────────────────────────────
+  'KPTI','KRYS','KYMR','LBPH','IOVA','IMGN','IMMU','GERN','GRTS','CRTX',
+  'CRVS','CTMX','EPZM','ERAS','BGNE','BOLD','CLDX','CORT','CTLT','DVAX',
+  'HALO','IBRX','IDYA','INCY','INSM','RCKT','FATE','BCRX',
+  // ── Neuroscience / CNS ───────────────────────────────────────────
+  'ACAD','ACER','ADMS','ALKS','ALVR','AMPH','ANVS','AXSM','CMPS','MNMD',
+  'ATAI','BFRI','CDTX','CERE','CNCE','COCP','CRTX','CYCN','EVOK','ITCI',
+  'KALA','LIQT','LMNL','MIRM','MORF','ATHA','HARP',
+  // ── Immunology / autoimmune ───────────────────────────────────────
+  'ALLK','AUPH','BXRX','CCXI','CGEN','CGEM','CKPT','CNCE','COCP','CRIN',
+  'CYCN','EVOK','ITOS','JANX','LYRA','MBIO','MBRX','MCRB','OMGA','OPTN',
+  // ── Infectious disease / vaccines ────────────────────────────────
+  'GOVX','DVAX','MRNA','BNTX','IBIO','ADMA','REGN','VRTX','GILD','ABBV',
+  'AMGN','BIIB','AXSM','CODX',
+  // ── Rare / orphan disease ─────────────────────────────────────────
+  'ACAD','AGIO','AGTC','AKRO','ALEC','ALGS','ANAB','ANIP','APDN','APLT',
+  'ARCT','ATAI','ATRA','AVEO','AVIR','AVRO','BCEL','BCYC','BDTX','BHVN',
+  'BLCM','BLTE','BPMC','BRTX','CERE','CGON','OMER','OMGA',
+  // ── Cardio / metabolic ───────────────────────────────────────────
+  'AKBA','AKRO','ARDX','ARQT','ARWR','BHVN','CRVS','AMRN','FOLD','ALNY',
+  // ── Ophthalmology / dermatology ──────────────────────────────────
+  'OCUL','ISEE','IVAC','GKOS','NPCE','OPTX','AXDX','AXGN','OSUR','ANGO',
+  'CNMD','CSII','CTSO','EXAS','IART','ILMN','INSP','LMAT','MASI','MELA',
+  // ── Mental health / psychedelics ─────────────────────────────────
+  'CMPS','MNMD','ATAI','MIND','ANVS','BIOL','BTAI','CDTX','FREQ','HARP',
+  // ── Diagnostics & lab services ───────────────────────────────────
+  'EXAS','ILMN','PACB','NNOX','NSTG','AXDX','SEER','TNDM','DXCM','PODD',
+  'ABMD','IART','CEMI','GKOS','NVST','OSUR','MDXG','RGEN','STAA',
+  // ── Mid-large cap biotech with catalyst volatility ────────────────
+  'REGN','VRTX','GILD','ABBV','BIIB','AMGN','ALXN','BMRN','SGEN','ALNY',
+  'IONS','RARE','PTCT','SRPT','FOLD','KRYS','IMCR',
+  // ── Additional unique micro-cap picks ────────────────────────────
+  'AADI','ABEO','ACET','ACMR','ACHV','ACOR','ACRV','ACST','ADCT','ADGI',
+  'ADMS','ADMP','ADPT','ADTX','ADVM','ADXN','AFMD','AGIO','AGRX','AHCO',
+  'AIMD','AKBA','AKLI','AKRO','AKYA','ALBO','ALEC','ALGS','ALIM','ALHC',
+  'ALLK','ALRN','ALVR','AMEH','AMPH','ANIK','ANNX','ANTX','APGE','APLS',
+  'APTO','APVO','APYX','AQST','ARAV','ARCT','ARDX','ARWR','ASLN','ASMB',
+  'ASND','ATAI','ATHA','ATNF','ATRC','ATRS','ATXS','AVDL','AVEO','AVIR',
+  'AVNS','AVRO','AVXL','AXDX','AXGN','AXSM','AYLA','AYRG','NEPT',
+  'BCAB','BCEL','BCYC','BCRX','BDTX','BFRI','BGNE','BHVN','BLCM','BLDE',
+  'BLFS','BLTE','BLUE','BNGO','BNTC','BNTX','BOLD','BPMC','BRTX','BYSI',
+  'CBMG','CBPO','CDMO','CEMI','CGEM','CGON','CKPT','CLBS','CLSD','CLVS',
+  'CMPS','CNCE','CNMD','COCP','CODX','CPHI','CRDF','CRNX','CRTX','CRVS',
+  'CRSP','CTLT','CTMX','CTXR','CYCN','CYTO','DBVT','DCPH','DCTH','DFFN',
+  'DMAC','DNLI','DOVA','DRMA','DVAX','DYAI','DXCM','EDIT','EDSA','ELOX',
+  'ENOB','ENOV','EPZM','ERAS','ESPR','ETNB','EVOK','EWTX','EXAS','EXEL',
+  'FBIO','FENC','FGEN','FLGT','FOLD','FREQ','FULC','FATE',
+  'GBIO','GERN','GKOS','GNMK','GOVX','GRPH','GRTS','GRTX',
+  'HALO','HARP','HEPA','HOOK','HRMY','HROW','IBRX','ICAD','IDYA','IMAB',
+  'IMGU','IMMP','IMMU','IMNM','IMRX','IMTX','IMVT','INCY','INFI','INMD',
+  'INOG','INSP','INSM','IONS','IOVA','IPIX','IPSC','ISEE','ITCI',
+  'JANX','JAZZ','JNCE','KALA','KDNY','KMPH','KNSA','KRYS','KRTX','KYMR',
+  'KPTI','LASR','LBPH','LGND','LIFE','LIQT','LMNL','LNTH','LODE','LOGC',
+  'LPCN','LQDA','LUNA','LUMO','LYEL','LYRA',
+  'MACK','MBIO','MBRX','MCRB','MDGL','MDXG','MEIP','MELA','MESO','MERUS',
+  'MGTA','MGTX','MIRM','MNKD','MNMD','MORF','MREO','MRNA','MRSN','MRUS',
+  'NBTX','NKTR','NNOX','NRXP','NSTG','NTLA','NUVL','NVCR','NVRO','NWBO',
+  'NXTC','NPCE','NARI','NUVN','OCRX','OCUP','OCGN','OCUL','ONVO','ORGO',
+  'ORMP','OTIC','OVID','OYST','OFIX','OPTN','OMCL','OMER','OMGA',
+  'PACB','PAVM','PBYI','PCVX','PDCO','PDYN','PHAT','PHIO','PIRS','PLRX',
+  'PMVP','POLA','PODD','PRAX','PRGO','PRLD','PROG','PRPH','PRQR','PRTA',
+  'PSNL','PTCT','PTGX','PULM','PRTK','QURE','QLGN',
+  'RBGV','RCKT','RDUS','RGEN','RGLS','RIGL','RKDA','RLMD','RLYB','RMED',
+  'RMMB','RPHM','RPID','RUBY','RVNC','RVPH','RXRX','RLAY','RARE',
+  'SANA','SEER','SELB','SGMO','SIGA','SLDB','SOLID','SRPT','STRO','STSA',
+  'SURF','SVRA','SYBX','TALO','TARA','TARS','TBPH','TCRR','TCRX','TELA',
+  'TGTX','THMO','TILS','TLCR','TNDM','TNXP','TRMR','TRVN','TSHA','TSIN',
+  'TSVT','TTOO','TTPH','TUPH','TVTX','TXMD','TYRA','UMRX','UROS','UTHR',
+  'VCNX','VCYT','VERA','VERV','VNDA','VRNA','VBIV','XBIO','XNCR','XOMA',
+  'XTNT','XXII','YMAB','YTRA','ZNTL','ZSAN','ZYBT',
+  // ── More small pharma picks ───────────────────────────────────────
+  'ACRX','ACRS','ADMP','ADXN','AGRX','AKLI','AKYA','ALDX','ALVR','AMEH',
+  'ANTE','ANTH','ASLN','AIMD','ALBO','ALBY','ALRS','AMBC','AYLA',
+  'ABCL','ABIO','ABUS','ADAP','ADCT','ADGI','ADPT','WTER','VNRX','UAVS',
+  'RILY','OCUL','LXRX','ATOS','CTIC','PAYA','SRNE','JAGX','SAVA',
+  'HCWB','CHRS','MTSL','VVPR','SIGA','BLPH','OBSV','CIDM','CYTH',
+  'CPIX','NCPL','ALBT','AEYE','SEEL','PDSB',
+  // ── CRO / lab / health services ───────────────────────────────────
+  'ICLR','MEDP','SYNH','PGNY','HCAT','DOCS','ACCD','AMWL','GDRX','RCM',
+  'TDOC','HQY','MDRX','ONEM','OPCH','OPRX','WELL','LIVN','HIMS',
+  // ── More unique names to round out 1500 ──────────────────────────
+  'ACET','ACGS','ACHV','ACLX','ACRV','ACST','ACER','ADMA','ADMP','AGEN',
+  'AGRX','AHPI','AIMD','AKBA','AKLI','ALBO','ALRN','AMPH','ANIK','ANNX',
+  'APGE','APLS','APTO','APVO','AQST','ARAV','ASMB','ASND','AVDL','AVEO',
+  'AVIR','AVNS','BFLY','BRKR','BYSI','CBMG','CBPO','CDMO','CERT','CGON',
+  'CLDX','CORT','CTMX','CYTX','DBVT','DCPH','DCTH','DMAC','DNLI','DRMA',
+  'ESPR','ETNB','EWTX','FBIO','FGEN','FLGT','FULC','GBIO','GOVX','GRPH',
+  'HOOK','HRMY','IMNM','IMRX','IMTX','IPSC','KNSA','LUMO','MERUS','MIRM',
+  'MNMD','MRSN','NUVL','NVCR','NVRO','NWBO','NXTC','RBGV','RDUS','RGLS',
+  'RIGL','RKDA','RLMD','RLYB','RMED','RMMB','RPHM','RPID','SANA','SELB',
+  'SLDB','SOLID','STRO','STSA','SURF','SVRA','SYBX','TALO','TARA','TARS'
+  ])],
   ENERGY: [],
   TECH: [],
   BROAD: []
