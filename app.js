@@ -517,7 +517,237 @@ const STOCK_UNIVERSES = {
   'RIGL','RKDA','RLMD','RLYB','RMED','RMMB','RPHM','RPID','SANA','SELB',
   'SLDB','SOLID','STRO','STSA','SURF','SVRA','SYBX','TALO','TARA','TARS'
   ])],
-  ENERGY: [],
+  ENERGY: [...new Set([
+  // Oil & Gas E&P small caps
+  'ESTE','CPER','BATL','REPX','TPVG','MNRL','VIST','VTLE','CRGY','CIVI',
+  'CHRD','SandP','ROCC','RING','KALU','PARR','DINO','MTDR','CTRA','CRC',
+  'NOG','SM','SPTN','PTEN','WTTR','NGL','CUI','AMPY','SNDE','HLCO',
+  'ENSV','TUSK','PED','KLXE','BORR','NINE','NRUC','CCLP','SRLP','USAC',
+  'FLNG','MMLP','CAPL','CDEV','SGBX','TELL','GXII','PFIE','IMAQ','STRP',
+  // Oil & Gas micro caps / volatile
+  'INDO','IOGP','NEXT','ARIS','DUNE','GRNT','MCLD','WTTR','RNGR','OIS',
+  'NGAS','MNRL','PHX','GPP','MMLP','SBOW','CPK','CALY','TALO','SilJ',
+  'SDCL','SNPX','PRTG','FANG','CDEV','REI','SWN','RRC','CNX','AR',
+  'GPOR','KOS','SD','DNR','WTI','BRY','MGY','VAALCO','IMPP','HUSA',
+  'ZOIL','GUSAF','OILCF','CAOIF','TEYLU','PTSX','RSSS','TPAN','PNRG','PEII',
+  // Natural gas
+  'EQT','CNX','RRC','SWN','AR','GPOR','COG','CTRA','FANG','DVN',
+  'PDCE','SM','BATL','CRGY','KOS','OVV','CVE','ARCH','SilJ','XOM',
+  // Oil field services
+  'SLB','HAL','BKR','WTTR','NINE','KLXE','PTEN','OIS','NBR','RES',
+  'CCLP','NRUC','SRLP','USAC','PFIE','RNGR','BOOM','OII','TUSK','BORR',
+  'PLOW','FI','NEWP','ESNT','FLMN','NEX','KFRC','DNOW','MRC','DRIL',
+  // Pipelines / midstream
+  'AM','TRGP','WES','DCP','MPLX','ENB','TRP','KMI','OKE','WMB',
+  'PAA','PAGP','SRLP','CAPL','GEL','USAC','NGL','MMLP','CCLP','GPP',
+  'FLNG','GMLP','KNOP','GLOP','TGS','ETRN','HESM','CDEV','LNG','NFG',
+  // Uranium
+  'UEC','UUUU','DNN','CCJ','NXE','UROY','BQSSF','URG','FCUUF','ENCUF',
+  'LTBR','GLO','BKUCF','WSTRF','CURUF','DYLLF','PALAF','URNM','URA','SRUUF',
+  'YLDF','AZUUF','NXEF','GVXXF','PDN','BMN','BOE','ERA','PEN','VAL',
+  // Lithium
+  'LAC','SQM','ALB','PLL','LTHM','SGML','LITM','GFAI','AMLI','LLKKF',
+  'CLIS','ATLX','ACDC','POWW','IPWR','FREYR','LILM','MVST','THMO','FLUX',
+  'IONR','SLNX','LTUM','AMPE','CBAT','CBNTF','HLTH','EVGO','CHPT','BLNK',
+  // Copper & base metals
+  'COPX','FCX','SCCO','HBM','CS','TGB','TECK','FM','LUN','IVN',
+  'NGEX','SOLG','KDNC','NGXB','CPPM','AURC','MTAL','ERO','CMMC','ANTO',
+  'CPMC','HUSI','LTCN','CPER','GATO','AG','CDE','PAAS','MAG','EXK',
+  // Gold miners
+  'NEM','GOLD','AEM','AGI','KGC','EGO','AU','IAG','HMY','GFI',
+  'DRD','SAND','RGLD','WPM','FNV','OR','MAG','MUX','SSRM','HL',
+  'ARIS','AUMN','BSVI','HYMC','USAS','GORO','GSS','MXC','IAUX','OROCF',
+  'VZLA','KORE','MAKO','ELRN','FILO','BCSA','SGLD','BGLD','MMNGF','ETMGF',
+  'NGD','BTG','SVLK','LGCL','GLDX','GLDG','EQTY','LGDTF','ROXG','EVGBC',
+  'TORR','ELEF','GOLD','SILV','SGSVF','ABRN','LODE','GMIN','MGLD','GFAI',
+  // Silver miners
+  'AG','PAAS','CDE','HL','EXK','MAG','SILV','SSRM','MXC','USAS',
+  'AUMN','GORO','IAUX','SVLK','BCSA','HYMC','SVBL','MKGAF','LODE','MFG',
+  // Gold & silver royalties
+  'WPM','FNV','RGLD','OR','SAND','EMX','MMX','MTAL','GROY','NRGOF',
+  // Platinum group metals / palladium
+  'PLZL','PALAF','SID','SBSW','IMP','SGBX','NORTF','CLNV','PTLKF','PALL',
+  // Rare earths & critical minerals
+  'MP','UUUU','REE','NVMI','LYSCF','NTRUF','NOVAF','HREE','GRAS','MLXEF',
+  'AMNE','RCIHH','AREFB','LIROF','PRSEF','ETRM','SGML','MLYF','CHMN','USRMF',
+  // Coal
+  'ARCH','CEIX','AMR','HCC','BTU','HNRG','METC','RAMR','NCPL','HLAK',
+  'FELP','NCOIF','CCOIF','SYNAF','ADYYF','BCICF','SLCXF','PCXCQ','FXNC','CNXC',
+  // Iron ore / steel
+  'CLF','X','MT','TX','NUE','STLD','RS','CMC','SID','VALE',
+  'GGAL','USAP','ZEUS','KALU','ATI','ALB','WOR','CENX','HAYN','MSTL',
+  // Aluminum
+  'CENX','AA','KALU','ARNC','ALCOA','NHYDY','IALUF','ALUM','ALUMF','MTAL',
+  // Solar energy
+  'ENPH','SEDG','FSLR','RUN','NOVA','SHLS','ARRY','CSIQ','JKS','SPWR',
+  'MAXN','HAPO','POLA','AMPS','AZRE','GPRE','FTCI','GXII','CSLR','SLTB',
+  'PEGY','ATNI','GIGA','CLNR','SLCE','STKH','SMRT','SOL','DAQO','GCL',
+  'JASO','YGE','TSL','HSOL','CSUN','SFUN','LDK','TPVG','PDYN','HLCO',
+  // Wind energy
+  'VWSYF','ORSTED','ENLT','AMRC','AY','CWEN','NEXE','GNPX','NEE','BEP',
+  'SGRE','WPRT','ZGENF','RWEOY','EDPR','INFN','LTBR','MMEX','GPRE','TPVG',
+  // EV & battery technology
+  'TSLA','RIVN','LCID','GOEV','WKHS','SOLO','AYRO','KNDI','IDEX','NKLA',
+  'FFIE','MULN','EVTV','ZEV','ELMS','THMO','MVST','CBAT','CBNTF','BNET',
+  'ACDC','FLUX','AMPE','IPWR','FREYR','BTBT','CHPT','EVGO','BLNK','SNPR',
+  'CLNV','HYZN','LOTZ','LFLY','RIDE','WATT','GFAI','ZAPP','AYRO','SOLO',
+  'ACTC','CENN','ELVA','EVFI','ARVL','PTRA','DKNG','GGPI','XPEV','LI',
+  'NIO','BYDDY','GELYF','SLDP','RNXT','CSLR','CLSK','SRM','BKSY','SPCE',
+  // Hydrogen & fuel cells
+  'PLUG','FCEL','BLDP','BE','HTOO','HYZN','HYZON','HGEN','HTAQ','HPNN',
+  'NFGC','LIQT','PURA','HDRO','CLNE','HYZON','FGMC','NDRA','HTPA','GFLO',
+  'HGEN','MFAC','AMTX','FLGT','GEVO','AMTX','PEGY','GPRE','REX','AMRC',
+  // Clean energy / renewable
+  'CLNE','AMRC','AY','CWEN','BEP','HASI','NOVA','RUN','SHLS','ARRY',
+  'NEE','ENPH','SEDG','FSLR','CSLR','SLTB','AZRE','GPRE','FTCI','GIGA',
+  'PEGY','SLCE','STKH','SMRT','SOL','ZGENF','RWEOY','EDPR','SGRE','ENLT',
+  'ATNI','CLNR','LTBR','MMEX','NCPL','WPRT','INFN','LFLY','SNPR','ACTC',
+  // Natural resources / commodity ETPs
+  'USO','UNG','GLD','SLV','COPX','GDX','GDXJ','XOP','XLE','FCG',
+  'REMX','LIT','URA','URNM','PALL','PPLT','DBO','DBB','DBA','DJP',
+  // Potash & fertilizers
+  'MOS','NTR','CF','UAN','WLKP','ICL','K','YARA','MBII','GPRE',
+  'RENEW','REX','AMTX','GEVO','PCRX','GPRE','CLNE','AMRC','AVTA','KBSF',
+  // Mining equipment & services
+  'BOOM','ASTE','KMT','TRS','GENC','RXN','MLAB','MRC','DNOW','CACTUS',
+  'WTTR','NINE','OIS','PFIE','NEX','KLXE','PTEN','RNGR','NBR','RES',
+  // Specialty chemicals / materials
+  'LYB','HUN','CC','OLN','WLK','TROX','KWR','MEOH','IOSP','FUL',
+  'H2O','CRAY','ASIX','GVHP','HYMC','SENEA','KBSF','GGAL','LIQT','PURA',
+  // Water / environmental
+  'CWCO','PCRX','AWR','YORW','MSEX','SJW','ARTW','WTRG','GWRS','FATHM',
+  'CLWT','PESI','HPNN','AMWL','ARIS','DUNE','GRNT','NGAS','CALY','TALO',
+  // Geothermal / other
+  'GPRE','ORMAT','ENLT','AY','CWEN','AMRC','BEP','HASI','NEE','CLNE',
+  // More oil & gas small caps
+  'HUSA','IMPP','REI','SD','WTI','BRY','VAALCO','ZOIL','DUNE','AMPY',
+  'SNDE','HLCO','ENSV','TUSK','PED','CDEV','NGAS','PHX','SBOW','CPK',
+  'CALY','PRTG','FANG','MCLD','OIS','GRNT','IOGP','NEXT','CCLP','USAC',
+  // Coal & met coal
+  'ARCH','CEIX','AMR','HCC','BTU','HNRG','METC','RAMR','NCPL','HLAK',
+  // More uranium
+  'UEC','UUUU','DNN','CCJ','NXE','UROY','URG','LTBR','GLO','BKUCF',
+  // More lithium / battery materials
+  'LAC','SQM','ALB','PLL','LTHM','SGML','LITM','AMLI','CLIS','ATLX',
+  // More gold
+  'NEM','GOLD','AEM','AGI','KGC','EGO','AU','IAG','HMY','GFI',
+  'DRD','SAND','RGLD','WPM','FNV','OR','MAG','MUX','SSRM','HL',
+  'NGD','BTG','AUMN','HYMC','USAS','GORO','GSS','MXC','IAUX','LODE',
+  // More silver
+  'AG','PAAS','CDE','EXK','SILV','SVLK','BCSA','SVBL','GORO','MXC',
+  // More copper
+  'FCX','SCCO','HBM','TGB','TECK','ERO','CMMC','GATO','MTAL','CPPM',
+  // More clean energy / EV
+  'HYZN','CLSK','BTBT','GFAI','ZAPP','SNPR','CENN','ELVA','EVFI','ARVL',
+  'PTRA','DKNG','GGPI','XPEV','LI','NIO','BYDDY','SLDP','CLNV','LFLY',
+  // Offshore drilling
+  'BORR','VAL','DO','NE','RIG','SDRL','PACD','ATW','ORIG','HES',
+  // LNG / shipping
+  'FLNG','GLOP','GMLP','KNOP','TGS','ETRN','HESM','LNG','NFG','CQP',
+  'COOL','CELP','GLP','SPH','SU','CNQ','CVE','OVV','BTE','PEY',
+  // Canadian oil sands / royalties
+  'SU','CNQ','CVE','OVV','BTE','PEY','ERF','CPG','BTEG','PROP',
+  // More E&P
+  'ESTE','REPX','ROCC','RING','PARR','DINO','MTDR','CTRA','CRC','NOG',
+  'SM','PTEN','KLXE','BORR','NINE','NGL','CUI','AMPY','SNDE','HLCO',
+  // Additional unique picks
+  'VGAS','LFST','NRXP','ENSR','CGBD','HNNA','GFAI','POAI','AMMO','CCEL',
+  'INDO','RCMT','PFIE','SRCI','CLNE','AMRC','GPRE','REX','AMTX','GEVO',
+  'PEGY','ATNI','GIGA','CLNR','SLCE','STKH','SMRT','HLCO','TUSK','PED',
+  'ENSV','RNGR','OIS','NRUC','NINE','NEX','KFRC','DNOW','MRC','DRIL',
+  'BOOM','FI','NEWP','ESNT','FLMN','WTTR','PLOW','KLXE','NBR','RES',
+  // Oil tankers / product tankers (commodity-correlated shipping)
+  'STNG','INSW','TRMD','DHT','EURN','FRO','NAT','TNP','TK','TOPS',
+  'DLNG','NVGS','CPLP','CLCO','SMLP','NRP','SITIO','APA','VNOM','BSM',
+  // Dry bulk shipping (moves with coal, iron ore, grain)
+  'GOGL','SBLK','GNK','NMM','CMRE','PANL','EGLE','GRIN','SHIP','SALT',
+  'NETI','CHNR','EDRY','GLBS','PSHG','TPIC','DSGX','BWXT','TRTN','ATEX',
+  // Battery storage / grid-scale energy
+  'STEM','NRGV','BEAM','FLUX','FREYR','MVST','CBAT','SLDP','HAPO','DCFC',
+  'WKHS','SOLO','AYRO','ZAPP','ACHR','JOBY','EVTV','ARVL','PTRA','CENN',
+  // More gold / silver miners
+  'SVM','GPL','TRX','PLG','AUMB','AMS','SIL','GLDM','IAU','SIVR',
+  'BCEKF','RUGPF','MFMSF','LGDTF','PRYMF','LBRTF','MXSGF','NFGFF','BPYFF','GSRCF',
+  // More uranium miners
+  'UUUU','UEC','DNN','NXE','UROY','URG','LTBR','BQSSF','FCUUF','ENCUF',
+  'CURUF','PALAF','SRUUF','DYLLF','YLDF','AZUUF','NXEF','GVXXF','WSTRF','PRSEF',
+  // Rare earth / critical minerals
+  'MP','REE','NVMI','LYSCF','NTRUF','HREE','GRAS','MLXEF','USRMF','AMNE',
+  'RCIHH','AREFB','LIROF','ETRM','SGML','MLYF','CHMN','UURAF','TMMFF','NIOAF',
+  // More lithium / EV materials
+  'LAC','PLL','LTHM','SGML','LITM','AMLI','CLIS','ATLX','ACDC','POWW',
+  'IONR','SLNX','LTUM','CBNTF','HLTH','MVNR','TMRR','MGXXF','SBEV','AMTX',
+  // More solar micro-caps
+  'JASO','YGE','TSL','HSOL','CSUN','LDK','SOL','PDYN','SLCE','STKH',
+  'SMRT','CSLR','SLTB','AZRE','FTCI','GIGA','MAXN','DAQO','HAPO','POLA',
+  // More clean energy / biofuels
+  'GEVO','AMTX','GPRE','REX','CLNE','AMRC','AY','CWEN','HASI','BEP',
+  'ENLT','WPRT','MMEX','NCPL','INFN','LFLY','SNPR','ACTC','PEGY','ATNI',
+  // More E&P small caps
+  'INDO','IOGP','HUSA','IMPP','REI','SD','WTI','BRY','VAALCO','ZOIL',
+  'DUNE','AMPY','SNDE','ENSV','TUSK','PED','CDEV','NGAS','PHX','SBOW',
+  'CPK','CALY','GRNT','CCLP','USAC','MCLD','OIS','PRTG','NEXT','ARIS',
+  // More oilfield services / equipment
+  'WTTR','NINE','KLXE','PTEN','OIS','NBR','RES','CCLP','NRUC','SRLP',
+  'PFIE','RNGR','BOOM','OII','TUSK','BORR','PLOW','NEX','DNOW','MRC',
+  // Offshore drilling rigs
+  'VAL','DO','NE','RIG','SDRL','PACD','ATW','ORIG','NOVN','VAALCO',
+  // More coal / metals
+  'ARCH','CEIX','AMR','HCC','BTU','HNRG','METC','NCPL','HLAK','FELP',
+  'CLF','X','MT','TX','NUE','STLD','RS','CMC','SID','VALE',
+  'CENX','AA','KALU','ARNC','HAYN','USAP','ZEUS','WOR','ATI','ALB',
+  // Potash / fertilizer / ag commodities
+  'MOS','NTR','CF','UAN','WLKP','ICL','MBII','RENEW','KBSF','AVTA',
+  // Environmental / water / specialty
+  'CWCO','AWR','YORW','MSEX','SJW','ARTW','WTRG','GWRS','CLWT','PESI',
+  // Nickel / cobalt / specialty metals
+  'HNNMY','MKORF','SBSW','SWC','PLG','VEDL','ANTO','IVN','LUN','FM',
+  // More midstream / pipeline MLPs
+  'CEQP','SMLP','AM','TRGP','WES','DCP','MPLX','ENB','TRP','KMI',
+  'OKE','WMB','PAA','PAGP','GEL','HESM','LNG','NFG','CQP','SPH',
+  // Canada oil/gas cross-listed
+  'SU','CNQ','CVE','OVV','BTE','PEY','ERF','CPG','BTEG','PROP',
+  // Additional unique energy small caps
+  'MNRL','VIST','VTLE','CRGY','ESTE','REPX','BATL','ROCC','NOG','SM',
+  'MTDR','CTRA','CRC','PARR','DINO','SWN','RRC','CNX','AR','GPOR',
+  'KOS','MGY','IMPP','HUSA','AMPY','TALO','CDEV','REI','SD','DNR',
+  // International oil majors (ADRs — volatile on geopolitics)
+  'EQNR','YPF','EC','PBR','TTE','BP','E','RDSB','STO','CVX',
+  'CNE','PGH','GTE','VAALCO','TGA','GPRK','LBOW','PLTK','GECC','SDCL',
+  // Petroleum refiners / downstream
+  'MPC','PSX','VLO','DK','PBF','CVI','CLMT','CAPL','HFC','CVRR',
+  'TROX','MEOH','LYB','HUN','OLN','WLK','CC','KWR','IOSP','FUL',
+  // Nuclear energy & small modular reactors
+  'LEU','OKLO','SMR','GEV','VST','CEG','AMSC','NLR','URA','URNM',
+  'BWX','LTBR','NNE','NANO','BWXT','NRGU','ATOME','STRNF','BNNXF','DYLLF',
+  // Grid-scale storage & power tech
+  'STEM','NRGV','BEAM','DCFC','WPRT','WATT','XPOF','ENER','ACNB','FLUX',
+  // Polestar / more EV
+  'PSNY','BLBD','WKHS','SOLO','AYRO','KNDI','IDEX','NKLA','MULN','FFIE',
+  // More precious metals miners
+  'AXU','ASM','SA','GAU','SVM','GPL','TRX','PLG','AUMB','CORR',
+  'NOVG','MCLD','CEE','MNTN','PMET','SKYGF','SEIFF','GDRZF','MLNXF','BGGRF',
+  // More copper / base metals juniors
+  'SOLG','KDNC','NGXB','CPPM','AURC','NGEX','ERO','CMMC','GATO','TGB',
+  // More natural gas / LNG
+  'TELL','NEXT','NFGC','CLCO','DLNG','NVGS','CPLP','GLOP','GMLP','KNOP',
+  // More clean energy juniors
+  'AMRC','HASI','CWEN','AY','NEE','BEP','ENLT','GPRE','REX','GEVO',
+  // Carbon capture / emerging energy
+  'CCRB','XCCC','OCEL','CLNR','MMEX','NCPL','LTBR','PURA','LIQT','HDRO',
+  // Shipping (commodity-correlated dry bulk)
+  'EGLE','GOGL','SBLK','GNK','NMM','CMRE','PANL','GRIN','SHIP','SALT',
+  'NETI','EDRY','GLBS','PSHG','TOPS','TNP','NAT','FRO','EURN','DHT',
+  'INSW','TRMD','STNG','TK','DLNG','ASC','SEANM','BSRT','GASS','CPLP',
+  // More oilfield services
+  'OII','TUSK','BORR','VAL','DO','NE','RIG','SDRL','PACD','ORIG',
+  // Specialty materials / industrial metals
+  'VEDL','SBSW','PLG','HAYN','USAP','ZEUS','ATI','ALB','ARNC','KALU',
+  'CENX','AA','MSTL','GGAL','ASIX','GVHP','SENEA','CRAY','H2O','FUL',
+  // Agricultural commodities / biofuels
+  'REX','GPRE','AMTX','GEVO','CLNE','AMRC','MOS','NTR','CF','UAN',
+  'WLKP','ICL','K','MBII','RENEW','AVTA','KBSF','PCRX','HNNA','CCEL',
+  ])],
   TECH: [],
   BROAD: []
 };
