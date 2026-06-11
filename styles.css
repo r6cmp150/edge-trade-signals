@@ -301,6 +301,28 @@ a { color: var(--blue); }
   text-transform: uppercase;
 }
 
+/* ── Universe Selector Buttons ── */
+.universe-row { padding-top: 10px; }
+.universe-btn {
+  font-family: var(--cond);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  white-space: nowrap;
+  transition: all 0.15s;
+  flex-shrink: 0;
+  letter-spacing: 0.4px;
+}
+.universe-btn.active {
+  background: rgba(255,140,0,0.15);
+  border-color: #FF8C00;
+  color: #FF8C00;
+}
+.ss-universe { color: #FF8C00; font-weight: 700; }
+
 /* ── Signal Toggle Buttons ── */
 .signal-toggle-row { padding: 12px 16px 6px; gap: 8px; }
 .signal-toggle {

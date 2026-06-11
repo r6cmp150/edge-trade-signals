@@ -9,8 +9,12 @@ const VERSION = 'v1.0.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
-// ── MASTER TICKERS — 1500 tickers scanned on every Refresh ──────
-const MASTER_TICKERS = [...new Set([
+// ── STOCK UNIVERSES ──────────────────────────────────────────────
+// LIST 1: MOMENTUM — high-vol small caps, meme, crypto-adjacent,
+//   cannabis, retail momentum plays, $1-$20 volume-spike stocks.
+// Lists 2-5 will be filled in separate sessions.
+const STOCK_UNIVERSES = {
+  MOMENTUM: [...new Set([
   'SNDL','CLOV','MVIS','WKHS','GOEV','SPWR','PLUG','FCEL','BLNK','IDEX',
   'ZOM','CPRX','CRON','ACB','TLRY','COTY','F','SNAP','SOFI','HOOD',
   'LCID','XPEV','NIO','MARA','RIOT','HUT','BITF','CLSK','CIFR','KOSS',
@@ -161,7 +165,13 @@ const MASTER_TICKERS = [...new Set([
   'ACTG','ADMS','ADRO','ADSE','AFMD','AFRI','AGBA','AGFY','AGTI','AIMD',
   'ALBO','ALBY','ALRS','ALTG','ALTM','ALUR','ALYA','AMBC','AMMO','ANTE',
   'ANTH','AOGI','AOUT','APGE','ARPO','ASRV','ATAX','AYLA','AYRG','NEPT'
-])];
+  ])],
+  BIOTECH: [],
+  ENERGY: [],
+  TECH: [],
+  BROAD: []
+};
+const MASTER_TICKERS = STOCK_UNIVERSES.MOMENTUM;
 let TICKERS = MASTER_TICKERS;
 
 const COMPANY_NAMES = {
@@ -229,10 +239,11 @@ let state = {
   _confirmCb: null,
   masterList: [],
   masterListUpdated: null,
+  selectedUniverse: 'MOMENTUM',
 };
 
 function loadState() {
-  ['settings','portfolio','sold','signals','lastScanTime','news','signalToggles','masterList','masterListUpdated'].forEach(k => {
+  ['settings','portfolio','sold','signals','lastScanTime','news','signalToggles','masterList','masterListUpdated','selectedUniverse'].forEach(k => {
     const raw = localStorage.getItem('edge_' + k);
     if (raw) { try { state[k] = JSON.parse(raw); } catch(e) {} }
   });
@@ -244,10 +255,11 @@ function loadState() {
     { strongBuy: true, softBuy: true, watch: true },
     state.signalToggles
   );
-  // Always scan MASTER_TICKERS; merge any extras discovered via Refresh List on top
-  TICKERS = state.masterList && state.masterList.length
-    ? [...new Set([...MASTER_TICKERS, ...state.masterList])]
-    : MASTER_TICKERS;
+  if (!state.selectedUniverse) state.selectedUniverse = 'MOMENTUM';
+  const baseList = STOCK_UNIVERSES[state.selectedUniverse] || MASTER_TICKERS;
+  TICKERS = (state.selectedUniverse === 'MOMENTUM' && state.masterList && state.masterList.length)
+    ? [...new Set([...baseList, ...state.masterList])]
+    : (baseList.length ? baseList : MASTER_TICKERS);
 }
 
 function persist(key) {
@@ -1047,9 +1059,10 @@ function setRefreshSpinning(on) {
 
 function handleRefresh() {
   if (state.activeTab === 'signals') {
-    TICKERS = state.masterList && state.masterList.length
-      ? [...new Set([...MASTER_TICKERS, ...state.masterList])]
-      : MASTER_TICKERS;
+    const baseList = STOCK_UNIVERSES[state.selectedUniverse] || MASTER_TICKERS;
+    TICKERS = (state.selectedUniverse === 'MOMENTUM' && state.masterList && state.masterList.length)
+      ? [...new Set([...baseList, ...state.masterList])]
+      : (baseList.length ? baseList : MASTER_TICKERS);
     runScreener();
   }
   else if (state.activeTab === 'portfolio') renderPortfolioTab();
@@ -1114,7 +1127,8 @@ function renderSignalsTab() {
     const sfb = state.signals.filter(s => s.signal === 'SOFT BUY').length;
     const w   = state.signals.filter(s => s.signal === 'WATCH').length;
     const total = TICKERS.length;
-    html += `<div class="scan-summary">Scanned ${total} stocks — <span class="ss-strong">${sb} strong buy</span>, <span class="ss-soft">${sfb} soft buy</span>, <span class="ss-watch">${w} watch</span></div>`;
+    const universe = state.selectedUniverse || 'MOMENTUM';
+    html += `<div class="scan-summary">Scanned ${total} stocks <span class="ss-universe">[${universe}]</span> — <span class="ss-strong">${sb} strong buy</span>, <span class="ss-soft">${sfb} soft buy</span>, <span class="ss-watch">${w} watch</span></div>`;
 
     const filtered = getFilteredSignals();
     if (!filtered.length) {
@@ -1147,7 +1161,15 @@ function renderFilterButtons() {
   const pf = state.filters.priceRange;
   const df = state.filters.duration;
   const t  = state.signalToggles;
+  const u  = state.selectedUniverse || 'MOMENTUM';
+  const universes = ['MOMENTUM','BIOTECH','ENERGY','TECH','BROAD'];
   return `
+    <div class="filter-label">Universe</div>
+    <div class="filter-row universe-row">
+      ${universes.map(v =>
+        `<button class="universe-btn ${u===v?'active':''}" onclick="setUniverse('${v}')">${v}</button>`
+      ).join('')}
+    </div>
     <div class="filter-row signal-toggle-row">
       <button class="signal-toggle signal-toggle-strong ${t.strongBuy?'active':''}" onclick="toggleSignal('strongBuy')">STRONG BUY</button>
       <button class="signal-toggle signal-toggle-soft ${t.softBuy?'active':''}" onclick="toggleSignal('softBuy')">SOFT BUY</button>
@@ -1170,6 +1192,12 @@ function renderFilterButtons() {
 
 function setFilter(key, val) {
   state.filters[key] = val;
+  renderSignalsTab();
+}
+
+function setUniverse(name) {
+  state.selectedUniverse = name;
+  persist('selectedUniverse');
   renderSignalsTab();
 }
 
