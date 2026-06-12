@@ -612,7 +612,7 @@ const STOCK_UNIVERSES = {
   'WTTR','NINE','OIS','PFIE','NEX','KLXE','PTEN','RNGR','NBR','RES',
   // Specialty chemicals / materials
   'LYB','HUN','CC','OLN','WLK','TROX','KWR','MEOH','IOSP','FUL',
-  'H2O','CRAY','ASIX','GVHP','HYMC','SENEA','KBSF','GGAL','LIQT','PURA',
+  'CRAY','ASIX','GVHP','HYMC','SENEA','KBSF','GGAL','LIQT','PURA',
   // Water / environmental
   'CWCO','PCRX','AWR','YORW','MSEX','SJW','ARTW','WTRG','GWRS','FATHM',
   'CLWT','PESI','HPNN','AMWL','ARIS','DUNE','GRNT','NGAS','CALY','TALO',
@@ -742,7 +742,7 @@ const STOCK_UNIVERSES = {
   'OII','TUSK','BORR','VAL','DO','NE','RIG','SDRL','PACD','ORIG',
   // Specialty materials / industrial metals
   'VEDL','SBSW','PLG','HAYN','USAP','ZEUS','ATI','ALB','ARNC','KALU',
-  'CENX','AA','MSTL','GGAL','ASIX','GVHP','SENEA','CRAY','H2O','FUL',
+  'CENX','AA','MSTL','GGAL','ASIX','GVHP','SENEA','CRAY','FUL',
   // Agricultural commodities / biofuels
   'REX','GPRE','AMTX','GEVO','CLNE','AMRC','MOS','NTR','CF','UAN',
   'WLKP','ICL','K','MBII','RENEW','AVTA','KBSF','PCRX','HNNA','CCEL',
