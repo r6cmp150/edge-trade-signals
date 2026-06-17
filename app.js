@@ -1477,10 +1477,11 @@ let state = {
   _confirmCb: null,
   lastPassedCount: 0,
   selectedUniverse: 'BROAD',
+  notifications: {},     // push notification state — persisted
 };
 
 function loadState() {
-  ['settings','portfolio','sold','signals','lastScanTime','news','signalToggles','lastPassedCount','selectedUniverse'].forEach(k => {
+  ['settings','portfolio','sold','signals','lastScanTime','news','signalToggles','lastPassedCount','selectedUniverse','notifications'].forEach(k => {
     const raw = localStorage.getItem('edge_' + k);
     if (raw) { try { state[k] = JSON.parse(raw); } catch(e) {} }
   });
@@ -1488,6 +1489,10 @@ function loadState() {
     alpacaKey: '', alpacaSecret: '', groqKey: '',
     budget: 500, includeUnder2: false, showWatch: true, minVolume: 100000
   }, state.settings);
+  state.notifications = Object.assign({
+    enabled: true, permission: 'default',
+    lastPriceCheck: null, lastDailyCheck: null, alertHistory: {}
+  }, state.notifications);
   state.signalToggles = Object.assign(
     { strongBuy: true, softBuy: true, watch: true },
     state.signalToggles
@@ -3846,6 +3851,65 @@ function renderSettingsTab() {
       </div>
     </div>
 
+    ${(function() {
+      const notif = state.notifications;
+      const perm = ('Notification' in window) ? Notification.permission : 'unsupported';
+      const isActive = perm === 'granted' && notif.enabled;
+      const activeMark = isActive ? ' <span style="color:#22c55e;font-size:14px;vertical-align:middle;">✓</span>' : '';
+
+      let lastCheckText = 'Never';
+      if (notif.lastPriceCheck) {
+        const mins = Math.round((Date.now() - new Date(notif.lastPriceCheck).getTime()) / 60000);
+        lastCheckText = mins < 1 ? 'Just now' : `${mins} minute${mins === 1 ? '' : 's'} ago`;
+      }
+      let nextCheckText = 'Pending';
+      if (_notifNextCheckTime) {
+        const minsLeft = Math.max(0, Math.round((_notifNextCheckTime - Date.now()) / 60000));
+        nextCheckText = minsLeft < 1 ? 'Imminent' : `in ${minsLeft} minute${minsLeft === 1 ? '' : 's'}`;
+      }
+
+      let body = '';
+      if (perm === 'granted') {
+        body = `
+          <div class="settings-row">
+            <div>
+              <div class="settings-label">Enable All Notifications</div>
+              <div class="settings-hint">Status: ${notif.enabled ? 'Active' : 'Disabled'}</div>
+            </div>
+            <label class="toggle-wrap">
+              <input type="checkbox" ${notif.enabled ? 'checked' : ''} onchange="toggleNotifications(this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <div>
+              <div class="settings-label">Last price check</div>
+              <div class="settings-hint">${lastCheckText}</div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div>
+              <div class="settings-label">Next check</div>
+              <div class="settings-hint">${nextCheckText}</div>
+            </div>
+          </div>`;
+      } else if (perm === 'denied') {
+        body = `<div class="settings-hint" style="color:#f87171;line-height:1.5;">
+          To enable notifications, go to your browser settings and allow notifications for this site.</div>`;
+      } else if (perm === 'default') {
+        body = `<div class="settings-row">
+          <button class="btn btn-primary btn-sm" onclick="requestNotificationPermission().then(()=>renderSettingsTab())">Enable Notifications</button>
+        </div>`;
+      } else {
+        body = `<div class="settings-hint muted">Push notifications are not supported in this browser.</div>`;
+      }
+
+      return `<div class="settings-section mt12">
+        <div class="settings-section-title">Push Notifications${activeMark}</div>
+        ${body}
+      </div>`;
+    })()}
+
     <div class="settings-section mt12">
       <div class="settings-section-title">App Info</div>
       <div class="settings-row">
@@ -3944,7 +4008,188 @@ function clearAllData() {
   });
 }
 
-// ── 21. NAVIGATION ────────────────────────────────────────────────
+// ── 21. PUSH NOTIFICATIONS ───────────────────────────────────────
+
+let _swRegistration = null;
+let _notifPriceInterval = null;
+let _notifDailyInterval = null;
+let _notifNextCheckTime = null;
+const NOTIF_PRICE_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    _swRegistration = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+  } catch(e) {
+    console.warn('SW registration failed:', e.message);
+  }
+}
+
+async function requestNotificationPermission() {
+  if (!('Notification' in window)) return;
+  state.notifications.permission = Notification.permission;
+  if (Notification.permission === 'default') {
+    const result = await Notification.requestPermission();
+    state.notifications.permission = result;
+    persist('notifications');
+  }
+}
+
+function isMarketHoursNow() {
+  const pt = getPT();
+  const tMin = pt.getHours() * 60 + pt.getMinutes();
+  return isTradingDay(pt) && tMin >= 390 && tMin < 780; // 6:30am–1:00pm PT
+}
+
+function businessDaysBetween(startDateStr, endDateStr) {
+  const start = new Date(startDateStr + 'T12:00:00');
+  const end   = new Date(endDateStr   + 'T12:00:00');
+  let count = 0;
+  const cur = new Date(start);
+  while (cur < end) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
+function isDuplicateAlert(ticker, condition) {
+  const last = (state.notifications.alertHistory || {})[ticker + '_' + condition];
+  return last && (Date.now() - last) < 60 * 60 * 1000;
+}
+
+function recordAlert(ticker, condition) {
+  if (!state.notifications.alertHistory) state.notifications.alertHistory = {};
+  state.notifications.alertHistory[ticker + '_' + condition] = Date.now();
+  persist('notifications');
+}
+
+async function sendNotification(title, body, tag) {
+  if (Notification.permission !== 'granted') return;
+  const opts = { body, tag, icon: './icon.svg', badge: './icon.svg', requireInteraction: false };
+  if (_swRegistration) {
+    try { await _swRegistration.showNotification(title, opts); return; } catch(e) {}
+  }
+  try { new Notification(title, opts); } catch(e) {}
+}
+
+async function checkPriceAlerts() {
+  if (!state.notifications.enabled) return;
+  if (Notification.permission !== 'granted') return;
+  if (!isMarketHoursNow()) return;
+  if (!state.settings.alpacaKey || !state.settings.alpacaSecret) return;
+  if (!state.portfolio.length) return;
+
+  state.notifications.lastPriceCheck = new Date().toISOString();
+  persist('notifications');
+
+  try {
+    const tickers = [...new Set(state.portfolio.map(p => p.ticker))];
+    const snaps = await fetchSnapshots(tickers);
+
+    for (const pos of state.portfolio) {
+      const snap = snaps[pos.ticker];
+      if (!snap) continue;
+      const price = snap.dailyBar?.c || snap.latestTrade?.p || 0;
+      if (!price) continue;
+
+      const { ticker, target, stop } = pos;
+
+      if (price >= target) {
+        if (!isDuplicateAlert(ticker, 'TARGET_HIT')) {
+          await sendNotification('EDGE Alert',
+            `🎯 ${ticker} hit your target of $${target.toFixed(2)}! SELL NOW to lock in profits.`,
+            `${ticker}_TARGET_HIT`);
+          recordAlert(ticker, 'TARGET_HIT');
+        }
+      } else if (price >= target * 0.95) {
+        const pct = ((target - price) / target * 100).toFixed(1);
+        if (!isDuplicateAlert(ticker, 'TARGET_NEAR')) {
+          await sendNotification('EDGE Alert',
+            `⚠ ${ticker} is ${pct}% from your target of $${target.toFixed(2)}. Consider taking profits soon.`,
+            `${ticker}_TARGET_NEAR`);
+          recordAlert(ticker, 'TARGET_NEAR');
+        }
+      }
+
+      if (price <= stop) {
+        if (!isDuplicateAlert(ticker, 'STOP_HIT')) {
+          await sendNotification('EDGE Alert',
+            `🔴 ${ticker} hit your stop loss of $${stop.toFixed(2)}! SELL NOW to limit losses.`,
+            `${ticker}_STOP_HIT`);
+          recordAlert(ticker, 'STOP_HIT');
+        }
+      } else if (price <= stop * 1.05) {
+        const pct = ((price - stop) / stop * 100).toFixed(1);
+        if (!isDuplicateAlert(ticker, 'STOP_NEAR')) {
+          await sendNotification('EDGE Alert',
+            `⚠ ${ticker} is ${pct}% from your stop loss of $${stop.toFixed(2)}. Watch closely.`,
+            `${ticker}_STOP_NEAR`);
+          recordAlert(ticker, 'STOP_NEAR');
+        }
+      }
+    }
+  } catch(e) {
+    console.warn('Price alert check failed:', e.message);
+  }
+}
+
+async function checkTimeLimitAlerts() {
+  if (!state.notifications.enabled) return;
+  if (Notification.permission !== 'granted') return;
+  if (!state.portfolio.length) return;
+
+  const todayStr = ptDateStr(getPT());
+
+  for (const pos of state.portfolio) {
+    const { ticker, duration, buyDate } = pos;
+    let threshold = null, durationLabel = '';
+    if (duration === '3-DAY')     { threshold = 4; durationLabel = 'Est. 2-4 Days'; }
+    else if (duration === 'WEEK') { threshold = 7; durationLabel = 'Est. 5-7 Days'; }
+    else continue; // 'DAY' — no time limit alert
+
+    const daysHeld = businessDaysBetween(buyDate, todayStr);
+    if (daysHeld > threshold && !isDuplicateAlert(ticker, 'TIME_LIMIT')) {
+      await sendNotification('EDGE Alert',
+        `📅 ${ticker} has been held ${daysHeld} days. Your estimated duration was ${durationLabel}. Consider selling today before market open.`,
+        `${ticker}_TIME_LIMIT`);
+      recordAlert(ticker, 'TIME_LIMIT');
+    }
+  }
+}
+
+function toggleNotifications(enabled) {
+  state.notifications.enabled = enabled;
+  persist('notifications');
+}
+
+function startNotificationChecks() {
+  _notifNextCheckTime = Date.now() + 3000;
+  setTimeout(() => {
+    checkPriceAlerts();
+    _notifNextCheckTime = Date.now() + NOTIF_PRICE_INTERVAL_MS;
+  }, 3000);
+
+  _notifPriceInterval = setInterval(() => {
+    checkPriceAlerts();
+    _notifNextCheckTime = Date.now() + NOTIF_PRICE_INTERVAL_MS;
+  }, NOTIF_PRICE_INTERVAL_MS);
+
+  _notifDailyInterval = setInterval(() => {
+    const pt = getPT();
+    if (pt.getHours() === 0 && pt.getMinutes() === 1) {
+      const todayStr = ptDateStr(pt);
+      if (state.notifications.lastDailyCheck !== todayStr) {
+        state.notifications.lastDailyCheck = todayStr;
+        persist('notifications');
+        checkTimeLimitAlerts();
+      }
+    }
+  }, 60000);
+}
+
+// ── 22. NAVIGATION ────────────────────────────────────────────────
 
 function switchTab(name) {
   state.activeTab = name;
@@ -3983,7 +4228,7 @@ function updateNavBadges() {
   }
 }
 
-// ── 22. CLOCK / REFRESH ───────────────────────────────────────────
+// ── 23. CLOCK / REFRESH ───────────────────────────────────────────
 
 function startClock() {
   updateMarketBanner();
@@ -3994,11 +4239,14 @@ function startClock() {
   }, 30000); // every 30 seconds
 }
 
-// ── 23. INIT ─────────────────────────────────────────────────────
+// ── 24. INIT ─────────────────────────────────────────────────────
 
-function init() {
+async function init() {
   loadState();
+  await registerServiceWorker();
+  await requestNotificationPermission();
   startClock();
+  startNotificationChecks();
   renderSignalsTab();
   updateNavBadges();
 }
