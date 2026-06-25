@@ -1,11 +1,11 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.0.0
+// EDGE Trade Signals — app.js  v1.1.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
@@ -1991,6 +1991,11 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
   }
 
   // Volume Build: 3 consecutive days of rising volume + today >= 1.3x avg (0–15)
+  let consRisingVolDays = 0;
+  for (let i = vols.length - 1; i > 0; i--) {
+    if (vols[i] > vols[i-1]) consRisingVolDays++;
+    else break;
+  }
   let volBuild = false;
   if (vols.length >= 4 && volRatio >= 1.3) {
     const n = vols.length;
@@ -1999,6 +2004,7 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
       score += 15;
     }
   }
+  const volBuildNearMiss = !volBuild ? { consecutiveDays: consRisingVolDays, volRatio } : null;
 
   // Mean Reversion: price 8–15% below 20MA, RSI < 45 and turning up (0–20)
   let meanReversion = false;
@@ -2010,6 +2016,7 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
       score += 20;
     }
   }
+  const meanReversionNearMiss = !meanReversion ? { pctBelowMA: maPct, rsi } : null;
 
   // Consecutive up days (0–15 pts)
   let consUpDays = 0;
@@ -2049,6 +2056,7 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
     rsi, atr, ma20, duration, entry, target, stop,
     score, risk, signal, priceRange, news: newsItem, hasNegNews,
     volBuild, meanReversion, maPct, volTrend, signalsFired,
+    volBuildNearMiss, meanReversionNearMiss,
     consUpDays, consUpPts, spyChange: spyChangePct, rsVsSPY, relStrengthPts,
     bars: sorted
   };
@@ -3102,6 +3110,8 @@ function confirmAddPortfolio(ticker) {
     riskAtBuy:       sig?.risk  || 5,
     newsAtBuy:       sig?.news?.headline || '',
     signalsFiredAtBuy: sig?.signalsFired || [],
+    volBuildNearMiss:      sig?.volBuildNearMiss      || null,
+    meanReversionNearMiss: sig?.meanReversionNearMiss || null,
     peakPrice:   price,
   };
 
@@ -3444,6 +3454,8 @@ function confirmMarkSold(posId) {
     riskAtBuy: pos.riskAtBuy,
     newsAtBuy: pos.newsAtBuy,
     signalsFiredAtBuy: pos.signalsFiredAtBuy || [],
+    volBuildNearMiss:      pos.volBuildNearMiss      || null,
+    meanReversionNearMiss: pos.meanReversionNearMiss || null,
     duration: pos.duration,
     priceRange: salePrice <= 3 ? '$1–$3' : salePrice <= 9 ? '$4–$9' : '$10–$20',
     sellWarningAtSale: currentWarn,
@@ -3602,6 +3614,18 @@ function generateClaudeReport() {
     return `Score ${lo}–${hi}: ${t.length} trades | ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}% win rate`;
   };
 
+  const rsiBucket = (lo, hi, label) => {
+    const t = sold.filter(s => (s.rsiAtBuy||0) >= lo && (s.rsiAtBuy||0) < hi);
+    const tw = t.filter(s => s.pnlPct > 0);
+    return `  ${label}: ${t.length} trades | ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}% win rate | avg outcome ${t.length?avg(t,s=>s.pnlPct).toFixed(1):'—'}%`;
+  };
+
+  const volBucket = (lo, hi, label) => {
+    const t = sold.filter(s => (s.volRatioAtBuy||0) >= lo && (s.volRatioAtBuy||0) < hi);
+    const tw = t.filter(s => s.pnlPct > 0);
+    return `  ${label}: ${t.length} trades | ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}% win rate | avg outcome ${t.length?avg(t,s=>s.pnlPct).toFixed(1):'—'}%`;
+  };
+
   let report = `EDGE TRADE SIGNALS — CLAUDE ANALYSIS REPORT
 Generated: ${dateStr}
 App Version: ${VERSION}
@@ -3615,6 +3639,31 @@ revised "Scoring System", "Risk Score Formula", and "Trade Duration Classificati
 section I can paste into my Claude Code spec to improve the next version of the app.
 Also note any patterns in my behavior (app signals vs own decisions, hold times,
 sell warning compliance) that might help me trade better.
+
+=== AUTO-FLAGGED PATTERNS (informational only — not yet acted on) ===
+${(()=>{
+  if (!sold.length) return '  No completed trades yet.';
+  const flags = [];
+  const avgRsiW = avg(wins,s=>s.rsiAtBuy||0);
+  const avgRsiL = avg(losses,s=>s.rsiAtBuy||0);
+  if (wins.length && losses.length && Math.abs(avgRsiW-avgRsiL)/Math.max(avgRsiL,1)*100 > 15) {
+    const dir = avgRsiW < avgRsiL ? 'LOWER' : 'HIGHER';
+    flags.push(`⚠ Avg RSI at purchase: wins ${avgRsiW.toFixed(1)} vs losses ${avgRsiL.toFixed(1)} — wins had ${dir} RSI than losses.\n  Current scoring rewards RSI 50-65 with 20pts. Sample size: ${sold.length} trades.\n  Consider re-evaluating once sample reaches 25-30 trades.`);
+  }
+  const avgVolW = avg(wins,s=>s.volRatioAtBuy||0);
+  const avgVolL = avg(losses,s=>s.volRatioAtBuy||0);
+  if (wins.length && losses.length && Math.abs(avgVolW-avgVolL)/Math.max(avgVolL,1)*100 > 15) {
+    const dir = avgVolW < avgVolL ? 'LOWER' : 'HIGHER';
+    flags.push(`⚠ Avg volume ratio at purchase: wins ${avgVolW.toFixed(2)}x vs losses ${avgVolL.toFixed(2)}x — wins had ${dir} volume ratio than losses.\n  Current scoring rewards higher volume. Sample size: ${sold.length} trades.\n  Consider re-evaluating once sample reaches 25-30 trades.`);
+  }
+  const avgScoreW = avg(wins,s=>s.scoreAtBuy||0);
+  const avgScoreL = avg(losses,s=>s.scoreAtBuy||0);
+  if (wins.length && losses.length && Math.abs(avgScoreW-avgScoreL)/Math.max(avgScoreL,1)*100 > 15) {
+    const dir = avgScoreW < avgScoreL ? 'LOWER' : 'HIGHER';
+    flags.push(`⚠ Avg signal score at purchase: wins ${avgScoreW.toFixed(1)} vs losses ${avgScoreL.toFixed(1)} — wins had ${dir} score than losses.\n  Current scoring uses 80+ = STRONG BUY. Sample size: ${sold.length} trades.\n  Consider re-evaluating once sample reaches 25-30 trades.`);
+  }
+  return flags.length ? flags.join('\n\n') : '  No divergences >15% detected between wins and losses on RSI, volume ratio, or signal score.';
+})()}
 
 === APP CONFIGURATION AT TIME OF REPORT ===
 Version: ${VERSION}
@@ -3643,6 +3692,18 @@ Signal data at purchase — wins vs losses:
   Avg risk score:   wins ${avg(wins,s=>s.riskAtBuy||0).toFixed(1)}  | losses ${avg(losses,s=>s.riskAtBuy||0).toFixed(1)}
   Avg signal score: wins ${avg(wins,s=>s.scoreAtBuy||0).toFixed(1)}  | losses ${avg(losses,s=>s.scoreAtBuy||0).toFixed(1)}
   Avg hold time:    wins ${avg(wins,s=>s.daysHeld||0).toFixed(1)} days | losses ${avg(losses,s=>s.daysHeld||0).toFixed(1)} days
+
+RSI at purchase — win rate by bucket:
+${rsiBucket(0,45,'<45    ')}
+${rsiBucket(45,55,'45–55  ')}
+${rsiBucket(55,65,'55–65  ')}
+${rsiBucket(65,999,'65+    ')}
+
+Volume ratio at purchase — win rate by bucket:
+${volBucket(0,1.0,'<1.0x  ')}
+${volBucket(1.0,2.0,'1.0–2x ')}
+${volBucket(2.0,3.0,'2–3x   ')}
+${volBucket(3.0,999,'3x+    ')}
 
 Sell warning compliance:
   Trades where SELL NOW was showing at sale: ${sellNowCount}
@@ -3674,6 +3735,28 @@ Performance by signal score at purchase:
   ${scoreStats(20,49)}
   ${scoreStats(50,79)}
   ${scoreStats(80,100)}
+
+=== NEAR-MISS SIGNAL ANALYSIS ===
+
+VOL_BUILD near-misses (signal didn't fire, but close):
+${(()=>{
+  const t2 = sold.filter(s=>s.volBuildNearMiss && s.volBuildNearMiss.consecutiveDays===2);
+  const t2w = t2.filter(s=>s.pnlPct>0);
+  const tr = sold.filter(s=>s.volBuildNearMiss && s.volBuildNearMiss.volRatio>=1.0 && s.volBuildNearMiss.volRatio<1.3);
+  const trw = tr.filter(s=>s.pnlPct>0);
+  return `  Trades where consecutive days was 2 (needed 3): ${t2.length} | win rate ${t2.length?((t2w.length/t2.length*100).toFixed(0)):'—'}%
+  Trades where vol ratio was 1.0–1.3x (needed 1.3x+): ${tr.length} | win rate ${tr.length?((trw.length/tr.length*100).toFixed(0)):'—'}%`;
+})()}
+
+MEAN_REVERSION near-misses:
+${(()=>{
+  const t48 = sold.filter(s=>s.meanReversionNearMiss && s.meanReversionNearMiss.pctBelowMA<=-4 && s.meanReversionNearMiss.pctBelowMA>-8);
+  const t48w = t48.filter(s=>s.pnlPct>0);
+  const tr = sold.filter(s=>s.meanReversionNearMiss && s.meanReversionNearMiss.rsi>=45 && s.meanReversionNearMiss.rsi<50);
+  const trw = tr.filter(s=>s.pnlPct>0);
+  return `  Trades where price was 4–8% below MA (needed 8–15%): ${t48.length} | win rate ${t48.length?((t48w.length/t48.length*100).toFixed(0)):'—'}%
+  Trades where RSI was 45–50 (needed <45): ${tr.length} | win rate ${tr.length?((trw.length/tr.length*100).toFixed(0)):'—'}%`;
+})()}
 
 === FULL TRADE HISTORY ===
 
