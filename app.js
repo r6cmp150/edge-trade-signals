@@ -1,11 +1,11 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.1.0
+// EDGE Trade Signals — app.js  v1.2.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.2.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 
@@ -1879,6 +1879,21 @@ function calcATR(bars) {
   return sum / 14;
 }
 
+// Trimmed ATR — drops the single highest True Range day before averaging, so one
+// spike (FDA news, short squeeze) doesn't inflate the target/stop for the next 14 days.
+// Used ONLY for target/stop (calcEntryTargetStop). Risk Score keeps using calcATR (untrimmed).
+function calcTrimmedATR(bars) {
+  if (bars.length < 15) return 0;
+  const last15 = bars.slice(-15);
+  const trueRanges = [];
+  for (let i = 1; i < 15; i++) {
+    const b = last15[i], prev = last15[i-1];
+    trueRanges.push(Math.max(b.h - b.l, Math.abs(b.h - prev.c), Math.abs(b.l - prev.c)));
+  }
+  const sorted = [...trueRanges].sort((a, b) => a - b);
+  return sorted.slice(0, 13).reduce((sum, x) => sum + x, 0) / 13;
+}
+
 function calcMA(closes, period) {
   if (closes.length < period) return closes[closes.length - 1] || 0;
   const slice = closes.slice(-period);
@@ -1921,7 +1936,7 @@ function classifyDuration(rsi, volRatio, closes) {
   return '3-DAY';
 }
 
-function calcEntryTargetStop(price, atr, duration) {
+function calcEntryTargetStop(price, atr, duration, resistance = {}) {
   const entry = price;
   const atrFloor = Math.max(atr, price * 0.02); // minimum 2% of price
   let tMult, sMult;
@@ -1931,10 +1946,28 @@ function calcEntryTargetStop(price, atr, duration) {
     case 'WEEK':  tMult = 3.5; sMult = 1.5;  break;
     default:      tMult = 1.5; sMult = 1.0;
   }
+  const rawTarget = entry + atrFloor * tMult;
+
+  // Cap raw target at nearest resistance ceiling above entry (52wk high, swing high, or 20-day MA)
+  const { high52, swingHigh10, ma20 } = resistance;
+  const levels = [];
+  if (high52 != null)      levels.push({ price: high52 * 0.98,      label: '52-week high' });
+  if (swingHigh10 != null) levels.push({ price: swingHigh10 * 0.99, label: 'recent swing high' });
+  if (ma20 != null && price < ma20) levels.push({ price: ma20 * 0.99, label: '20-day MA' });
+
+  const applicable = levels.filter(l => l.price > entry);
+  let target = rawTarget, cappedBy = null;
+  if (applicable.length) {
+    const nearest = applicable.reduce((a, b) => (b.price < a.price ? b : a));
+    if (rawTarget > nearest.price) { target = nearest.price; cappedBy = nearest.label; }
+  }
+  target = Math.max(target, entry * 1.02);
+
   return {
     entry,
-    target: Math.max(entry + atrFloor * tMult, entry * 1.02),
-    stop:   Math.min(entry - atrFloor * sMult, entry * 0.95)
+    target,
+    stop: Math.min(entry - atrFloor * sMult, entry * 0.95),
+    cappedBy
   };
 }
 
@@ -1959,14 +1992,21 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
   const vols   = sorted.map(b => b.v);
 
   const rsi = calcRSI(closes);
-  const atr = calcATR(sorted);
+  const atr = calcATR(sorted); // simple/untrimmed — feeds Risk Score only
+  const trimmedAtr = calcTrimmedATR(sorted); // feeds target/stop only
   const ma20 = calcMA(closes, 20);
   const avgVol10 = calcAvgVolume(vols, 10);
   const volRatio = avgVol10 > 0 ? volume / avgVol10 : 1;
   const todayChange = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
 
   const duration = classifyDuration(rsi, volRatio, closes);
-  const { entry, target, stop } = calcEntryTargetStop(price, atr, duration);
+  // Resistance levels for target capping (Change 6). Window is whatever bars are
+  // available (~100-125 trading days from the screener fetch), not a true 252-day
+  // 52-week window — treated as an approximation per product decision.
+  const high52 = Math.max(...sorted.map(b => b.h));
+  const last10ExclToday = sorted.slice(-11, -1);
+  const swingHigh10 = last10ExclToday.length ? Math.max(...last10ExclToday.map(b => b.h)) : null;
+  const { entry, target, stop, cappedBy } = calcEntryTargetStop(price, trimmedAtr, duration, { high52, swingHigh10, ma20 });
 
   let score = 0;
   // Volume spike (0–30)
@@ -2053,7 +2093,7 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
   return {
     ticker, company: COMPANY_NAMES[ticker] || ticker,
     price, prevClose, todayChange, volume, volRatio,
-    rsi, atr, ma20, duration, entry, target, stop,
+    rsi, atr, trimmedAtr, ma20, duration, entry, target, stop, cappedBy,
     score, risk, signal, priceRange, news: newsItem, hasNegNews,
     volBuild, meanReversion, maPct, volTrend, signalsFired,
     volBuildNearMiss, meanReversionNearMiss,
@@ -2459,6 +2499,7 @@ function renderStockCard(s, marketClosed) {
         <span>→</span>
         <span class="level-target">Target <span class="mono">$${s.target.toFixed(2)}</span> (▲${upside}%)</span>
       </div>
+      ${s.cappedBy ? `<div class="target-capped-note">Target capped at ${s.cappedBy}</div>` : ''}
       <div class="card-sub">
         Stop <span class="mono">$${s.stop.toFixed(2)}</span> · RSI ${s.rsi.toFixed(0)} · ${s.priceRange}
       </div>
@@ -2698,6 +2739,7 @@ async function openStockModal(ticker) {
     _chartCurrentPrice = price;
     const rsi     = calcRSI(closes);
     const atr     = calcATR(sorted);
+    const trimmedAtr = calcTrimmedATR(sorted);
     const ma20    = calcMA(closes, 20);
     const avgVol10 = calcAvgVolume(vols, 10);
     const volRatio = avgVol10 > 0 ? ((sorted[sorted.length-1]?.v||0) / avgVol10) : 1;
@@ -2705,12 +2747,14 @@ async function openStockModal(ticker) {
     const last252 = sorted.slice(-252);
     const high52  = last252.length ? Math.max(...last252.map(b => b.h)) : price;
     const low52   = last252.length ? Math.min(...last252.map(b => b.l)) : price;
+    const last10ExclToday = sorted.slice(-11, -1);
+    const swingHigh10 = last10ExclToday.length ? Math.max(...last10ExclToday.map(b => b.h)) : null;
 
     const stock = s || {
       ticker, company: COMPANY_NAMES[ticker]||ticker,
       price, rsi, atr, ma20, volRatio, bars: sorted,
       duration: classifyDuration(rsi, volRatio, closes),
-      ...calcEntryTargetStop(price, atr, classifyDuration(rsi, volRatio, closes)),
+      ...calcEntryTargetStop(price, trimmedAtr, classifyDuration(rsi, volRatio, closes), { high52, swingHigh10, ma20 }),
       score: 0, risk: calcRiskScore(price, atr, rsi, volRatio, false),
       priceRange: price <= 3 ? '$1–$3' : price <= 9 ? '$4–$9' : '$10–$20',
       todayChange: 0, signal: 'WATCH', news: null
@@ -2787,6 +2831,7 @@ async function openStockModal(ticker) {
         <div class="level-cell">
           <div class="level-cell-label">Target (▲${upside}%)</div>
           <div class="level-cell-val pos">$${stock.target.toFixed(2)}</div>
+          ${stock.cappedBy ? `<div class="target-capped-note">Capped at ${stock.cappedBy}</div>` : ''}
         </div>
         <div class="level-cell">
           <div class="level-cell-label">Stop-Loss (${downside}%)</div>
@@ -3114,6 +3159,9 @@ function confirmAddPortfolio(ticker) {
     signalsFiredAtBuy: sig?.signalsFired || [],
     volBuildNearMiss:      sig?.volBuildNearMiss      || null,
     meanReversionNearMiss: sig?.meanReversionNearMiss || null,
+    cappedByAtBuy: sig?.cappedBy || null,
+    rawAtrAtBuy:     sig?.atr        ?? null,
+    trimmedAtrAtBuy: sig?.trimmedAtr ?? null,
     peakPrice:   price,
   };
 
@@ -3171,7 +3219,11 @@ async function renderPortfolioTab() {
 
     const currentPrice = snap?.dailyBar?.c || snap?.latestTrade?.p || p.buyPrice;
     const rsi = closes.length >= 15 ? calcRSI(closes) : p.rsiAtBuy;
-    const atr = bars.length >= 15 ? calcATR(bars) : 0;
+    const trimmedAtr = bars.length >= 15 ? calcTrimmedATR(bars) : 0;
+
+    // Live recalculated target (display-only — sell warnings keep using p.target)
+    const liveTarget = trimmedAtr > 0 ? calcEntryTargetStop(currentPrice, trimmedAtr, p.duration).target : null;
+    p.liveTarget = liveTarget;
 
     // Update peak
     if (currentPrice > (p.peakPrice || 0)) {
@@ -3199,6 +3251,11 @@ async function renderPortfolioTab() {
     const fridayFlag   = buildFridayFlag(p, currentPrice, pnlPct);
     const priceDiffPct = ((currentPrice - p.buyPrice) / p.buyPrice) * 100;
     const priceTrackCls = Math.abs(priceDiffPct) < 1 ? 'pf-track-flat' : priceDiffPct > 0 ? 'pf-track-up' : 'pf-track-down';
+
+    const targetDriftPct = liveTarget ? ((liveTarget - p.target) / p.target) * 100 : 0;
+    const targetDisplay = (liveTarget && Math.abs(targetDriftPct) > 5)
+      ? `Original target: $${p.target.toFixed(2)} → Live target: $${liveTarget.toFixed(2)} <span class="pf-shifted">⚠ Shifted</span>`
+      : `Target $${p.target.toFixed(2)}`;
 
     // Build AH row for portfolio card
     let pfAHHtml = '';
@@ -3245,7 +3302,7 @@ async function renderPortfolioTab() {
       </div>
       ${pfAHHtml}
       <div class="card-sub">
-        Target $${p.target.toFixed(2)} · Stop $${p.stop.toFixed(2)} · RSI ${rsi.toFixed(0)}
+        ${targetDisplay} · Stop $${p.stop.toFixed(2)} · RSI ${rsi.toFixed(0)}
       </div>
       <div class="pf-actions">
         <button class="btn btn-danger btn-sm" onclick="openMarkSoldModal('${p.id}', ${currentPrice})">Mark as Sold</button>
@@ -3437,6 +3494,9 @@ function confirmMarkSold(posId) {
   const pnlDollar = (salePrice - pos.buyPrice) * pos.shares;
   const pnlPct    = ((salePrice - pos.buyPrice) / pos.buyPrice) * 100;
   const currentWarn = calcSellWarning(pos, salePrice, pos.rsiAtBuy, 0);
+  const targetDriftPct = (pos.liveTarget != null && pos.target)
+    ? ((pos.liveTarget - pos.target) / pos.target) * 100
+    : null;
 
   const record = {
     id: Date.now().toString(),
@@ -3458,9 +3518,13 @@ function confirmMarkSold(posId) {
     signalsFiredAtBuy: pos.signalsFiredAtBuy || [],
     volBuildNearMiss:      pos.volBuildNearMiss      || null,
     meanReversionNearMiss: pos.meanReversionNearMiss || null,
+    cappedByAtBuy: pos.cappedByAtBuy || null,
+    rawAtrAtBuy:     pos.rawAtrAtBuy     ?? null,
+    trimmedAtrAtBuy: pos.trimmedAtrAtBuy ?? null,
     duration: pos.duration,
     priceRange: salePrice <= 3 ? '$1–$3' : salePrice <= 9 ? '$4–$9' : '$10–$20',
     sellWarningAtSale: currentWarn,
+    targetDriftPct,
   };
 
   state.sold.unshift(record);
@@ -3758,6 +3822,47 @@ ${(()=>{
   const trw = tr.filter(s=>s.pnlPct>0);
   return `  Trades where price was 4–8% below MA (needed 8–15%): ${t48.length} | win rate ${t48.length?((t48w.length/t48.length*100).toFixed(0)):'—'}%
   Trades where RSI was 45–50 (needed <45): ${tr.length} | win rate ${tr.length?((trw.length/tr.length*100).toFixed(0)):'—'}%`;
+})()}
+
+Target drift at time of sale:
+${(()=>{
+  const higher = sold.filter(s=>s.targetDriftPct!=null && s.targetDriftPct>5);
+  const higherW = higher.filter(s=>s.pnlPct>0);
+  const lower = sold.filter(s=>s.targetDriftPct!=null && s.targetDriftPct<-5);
+  const lowerW = lower.filter(s=>s.pnlPct>0);
+  const within = sold.filter(s=>s.targetDriftPct!=null && Math.abs(s.targetDriftPct)<=5);
+  const withinW = within.filter(s=>s.pnlPct>0);
+  return `  Trades where live target was >5% higher than original:  ${higher.length} | win rate ${higher.length?((higherW.length/higher.length*100).toFixed(0)):'—'}%
+  Trades where live target was >5% lower than original:   ${lower.length} | win rate ${lower.length?((lowerW.length/lower.length*100).toFixed(0)):'—'}%
+  Trades where live target was within 5% of original:     ${within.length} | win rate ${within.length?((withinW.length/within.length*100).toFixed(0)):'—'}%`;
+})()}
+
+Target capping at time of purchase:
+${(()=>{
+  const cap52 = sold.filter(s=>s.cappedByAtBuy==='52-week high');
+  const cap52w = cap52.filter(s=>s.pnlPct>0);
+  const capSwing = sold.filter(s=>s.cappedByAtBuy==='recent swing high');
+  const capSwingW = capSwing.filter(s=>s.pnlPct>0);
+  const capMA = sold.filter(s=>s.cappedByAtBuy==='20-day MA');
+  const capMAW = capMA.filter(s=>s.pnlPct>0);
+  const uncapped = sold.filter(s=>!s.cappedByAtBuy);
+  const uncappedW = uncapped.filter(s=>s.pnlPct>0);
+  return `  Trades where target was capped by 52-week high:    ${cap52.length} | win rate ${cap52.length?((cap52w.length/cap52.length*100).toFixed(0)):'—'}%
+  Trades where target was capped by swing high:      ${capSwing.length} | win rate ${capSwing.length?((capSwingW.length/capSwing.length*100).toFixed(0)):'—'}%
+  Trades where target was capped by 20-day MA:       ${capMA.length} | win rate ${capMA.length?((capMAW.length/capMA.length*100).toFixed(0)):'—'}%
+  Trades where target was NOT capped (ATR ruled):    ${uncapped.length} | win rate ${uncapped.length?((uncappedW.length/uncapped.length*100).toFixed(0)):'—'}%`;
+})()}
+
+ATR trimming impact at time of purchase:
+${(()=>{
+  const withAtr = sold.filter(s=>s.rawAtrAtBuy!=null && s.trimmedAtrAtBuy!=null);
+  if (!withAtr.length) return '  No trades with ATR data recorded yet.';
+  const avgRaw = avg(withAtr, s=>s.rawAtrAtBuy);
+  const avgTrimmed = avg(withAtr, s=>s.trimmedAtrAtBuy);
+  const reductionPct = avgRaw > 0 ? ((avgRaw - avgTrimmed) / avgRaw * 100) : 0;
+  return `  Avg raw ATR across all trades:     ${avgRaw.toFixed(3)}
+  Avg trimmed ATR across all trades: ${avgTrimmed.toFixed(3)}
+  Avg reduction from trimming:       ${reductionPct.toFixed(1)}% smaller`;
 })()}
 
 === FULL TRADE HISTORY ===

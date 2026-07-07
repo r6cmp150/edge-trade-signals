@@ -427,7 +427,9 @@ a { color: var(--blue); }
 .card-levels .mono { font-family: var(--mono); font-size: 12px; }
 .level-target { color: var(--green); }
 .level-stop   { color: var(--red); }
+.target-capped-note { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 2px; }
 .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.pf-shifted { color: var(--yellow); font-weight: 700; }
 .card-news {
   font-size: 11px;
   color: var(--text-dim);
