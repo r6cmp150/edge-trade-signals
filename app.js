@@ -2321,7 +2321,9 @@ function setFilter(key, val) {
 function setUniverse(name) {
   state.selectedUniverse = name;
   persist('selectedUniverse');
-  renderSignalsTab();
+  const baseList = STOCK_UNIVERSES[name] || MASTER_TICKERS;
+  TICKERS = baseList.length ? baseList : MASTER_TICKERS;
+  runScreener();
 }
 
 function toggleSignal(category) {
