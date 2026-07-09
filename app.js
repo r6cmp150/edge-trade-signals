@@ -1506,6 +1506,23 @@ function persist(key) {
   try { localStorage.setItem('edge_' + key, JSON.stringify(state[key])); } catch(e) {}
 }
 
+// Single source of truth for "is this ticker in Portfolio". Reads localStorage
+// directly rather than state.portfolio so it can never disagree with what's
+// actually persisted, and normalizes both sides so casing/whitespace can't
+// cause a false negative.
+function getOwnedPosition(ticker) {
+  let portfolio = [];
+  try {
+    const raw = localStorage.getItem('edge_portfolio');
+    portfolio = raw ? JSON.parse(raw) : [];
+  } catch(e) { portfolio = []; }
+
+  const needle = String(ticker || '').trim().toUpperCase();
+  if (!needle) return null;
+
+  return portfolio.find(p => String(p.ticker || '').trim().toUpperCase() === needle) || null;
+}
+
 // ── 3. PACIFIC TIME / MARKET STATUS ─────────────────────────────
 
 function getPT(date = new Date()) {
@@ -2749,11 +2766,7 @@ let _modalStock = null;
 
 async function openStockModal(ticker) {
   const s = state.signals.find(x => x.ticker === ticker);
-
-  // TEMP DEBUG — remove after diagnosing Portfolio ownership-match bug
-  console.log('[EDGE DEBUG] ticker passed to openStockModal:', JSON.stringify(ticker));
-  console.log('[EDGE DEBUG] state.portfolio tickers:', state.portfolio.map(p => JSON.stringify(p.ticker)));
-  console.log('[EDGE DEBUG] ownership match found:', state.portfolio.some(p => p.ticker === ticker));
+  const ownedPos = getOwnedPosition(ticker);
 
   showModal(`<div class="modal-handle"></div>
     <div class="modal-header">
@@ -2951,11 +2964,14 @@ async function openStockModal(ticker) {
 
       <div class="ai-section" id="ai-section">
         <div class="ai-title">AI Analysis <span style="font-size:10px;color:var(--muted)">(Groq)</span></div>
-        <button class="btn btn-sm btn-primary" onclick="loadAIAnalysis('${ticker}')">${state.portfolio.some(p => p.ticker === ticker) ? '📊 Should I Hold or Sell?' : '📊 Should I Buy Now?'}</button>
+        <button class="btn btn-sm btn-primary" onclick="loadAIAnalysis('${ticker}')">${ownedPos ? '📊 Should I Hold or Sell?' : '📊 Should I Buy Now?'}</button>
       </div>
     `;
 
-    document.getElementById('stock-modal-footer').innerHTML = `
+    document.getElementById('stock-modal-footer').innerHTML = ownedPos ? `
+      <button class="btn btn-ghost" style="flex:1" disabled>✓ In Portfolio</button>
+      <button class="btn btn-ghost" onclick="closeModal()">✕</button>
+    ` : `
       <button class="btn btn-success" style="flex:1" onclick="openAddPortfolioModal('${ticker}')">+ Add to Portfolio</button>
       <button class="btn btn-ghost" onclick="closeModal()">✕</button>
     `;
@@ -3067,7 +3083,7 @@ function renderPriceChart(bars, currentPrice, isHourly = false) {
 async function loadAIAnalysis(ticker) {
   const stock = _modalStock;
   if (!stock) return;
-  const pos = state.portfolio.find(p => p.ticker === ticker);
+  const pos = getOwnedPosition(ticker);
 
   const sec = document.getElementById('ai-section');
   if (!sec) return;
