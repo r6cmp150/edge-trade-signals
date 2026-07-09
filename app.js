@@ -2750,6 +2750,11 @@ let _modalStock = null;
 async function openStockModal(ticker) {
   const s = state.signals.find(x => x.ticker === ticker);
 
+  // TEMP DEBUG — remove after diagnosing Portfolio ownership-match bug
+  console.log('[EDGE DEBUG] ticker passed to openStockModal:', JSON.stringify(ticker));
+  console.log('[EDGE DEBUG] state.portfolio tickers:', state.portfolio.map(p => JSON.stringify(p.ticker)));
+  console.log('[EDGE DEBUG] ownership match found:', state.portfolio.some(p => p.ticker === ticker));
+
   showModal(`<div class="modal-handle"></div>
     <div class="modal-header">
       <div>
