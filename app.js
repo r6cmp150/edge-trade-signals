@@ -1759,13 +1759,12 @@ async function testAlpacaConnection() {
 
 // ── 7. GROQ API ───────────────────────────────────────────────────
 
-async function groqAnalyze(stock) {
+async function groqAnalyze(ticker, prompt) {
   const key = state.settings.groqKey;
   if (!key) throw new Error('No Groq key');
 
-  if (state.aiCache[stock.ticker]) return state.aiCache[stock.ticker];
+  if (state.aiCache[ticker]) return state.aiCache[ticker];
 
-  const prompt = buildAIPrompt(stock);
   const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
@@ -1780,57 +1779,83 @@ async function groqAnalyze(stock) {
   const data = await r.json();
   const text = data.choices?.[0]?.message?.content || '';
 
-  const result = parseAIResponse(text);
-  state.aiCache[stock.ticker] = result;
+  const result = { answers: parseAIAnswers(text) };
+  state.aiCache[ticker] = result;
   return result;
 }
 
-function buildAIPrompt(s) {
-  const durLabel = durBadgeText(s.duration);
-  return `You are a short-term trading analyst helping a retail investor decide whether to buy a stock right now. Be direct, specific and actionable. No disclaimers.
+function buildAIPromptOwned(stock, pos) {
+  const days = Math.floor((Date.now() - new Date(pos.buyDate).getTime()) / 86400000);
+  const pnlDollar = (stock.price - pos.buyPrice) * pos.shares;
+  const pnlPct = ((stock.price - pos.buyPrice) / pos.buyPrice) * 100;
+  const warn = calcSellWarning(pos, stock.price, stock.rsi, 0).replace('_', ' ');
+  return `You are a short-term trading analyst reviewing an open position. The investor
+already owns this stock and is deciding whether to hold or sell RIGHT NOW.
 
-Stock: ${s.ticker} (${s.company || s.ticker})
-Current Price: $${s.price.toFixed(2)}
-Today's Change: ${s.todayChange.toFixed(2)}%
-RSI (14-day): ${s.rsi.toFixed(1)}
-Volume vs 10-day average: ${s.volRatio.toFixed(2)}x
-Price vs 20-day MA: ${s.price > s.ma20 ? 'ABOVE' : 'BELOW'}
-Signal Score: ${s.score}/100
-Risk Level: ${s.risk}/10
-Trade Duration: ${durLabel}
-Price Range: ${s.priceRange}
-Recent news: ${s.news ? s.news.headline : 'none'}
-Entry: $${s.entry.toFixed(2)} | Target: $${s.target.toFixed(2)} | Stop-loss: $${s.stop.toFixed(2)}
-Volume Build detected: ${s.volBuild ? 'YES' : 'NO'}
-Mean Reversion setup: ${s.meanReversion ? 'YES' : 'NO'}
+Stock: ${stock.ticker} (${stock.company || stock.ticker})
+Purchase price: $${pos.buyPrice.toFixed(2)}
+Current price: $${stock.price.toFixed(2)}
+Unrealized P&L: ${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)} (${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%)
+Days held: ${days} of intended ${durHoldLabel(pos.duration)} trade
+Original target: $${pos.target.toFixed(2)}
+Live target: $${stock.target.toFixed(2)}
+Stop-loss: $${pos.stop.toFixed(2)}
+Current RSI: ${stock.rsi.toFixed(1)}
+Volume ratio vs average: ${stock.volRatio.toFixed(2)}x
+Current signal score: ${stock.score}/100
+Current risk score: ${stock.risk}/10
+Sell warning status: ${warn}
 
-Respond with exactly 3 bullet points in this exact format:
+Answer three things:
+1. HOLD or SELL right now, and the single most important reason why in one sentence.
+2. Two to three sentences on what the price action and indicators are saying at this exact moment.
+3. Probability the stock reaches the live target before hitting the stop-loss, as a percentage with a one-sentence explanation of what would need to happen for it to get there.
 
-- BUY NOW OR WAIT: Tell the investor whether to buy right now at the current price or wait, and specifically what to wait for if waiting is recommended. Be decisive.
-
-- RISKS: List the 2-3 most important risks specific to this trade right now. Include how bad it could get if the stop-loss is hit.
-
-- SIGNALS FOR vs AGAINST: List which signals are working in favor of this trade and which are working against it. Be specific about the numbers.
-
-Keep each bullet point to 2-3 sentences maximum. Be direct like a trader talking to another trader.`;
+Be direct. No disclaimers. Base everything on the data above.`;
 }
 
-function parseAIResponse(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  const bullets = [];
-  let tip = '';
-  let inTip = false;
+function buildAIPromptCandidate(stock) {
+  return `You are a short-term trading analyst. A retail investor is deciding whether
+to buy this stock RIGHT NOW or wait.
 
-  for (const line of lines) {
-    if (/strategy tip/i.test(line)) { inTip = true; continue; }
-    if (inTip) { tip += (tip ? ' ' : '') + line.replace(/^[-•*]\s*/, ''); continue; }
-    if (/^[-•*\d]/.test(line) && bullets.length < 3) {
-      bullets.push(line.replace(/^[-•*\d.]+\s*/, ''));
+Stock: ${stock.ticker} (${stock.company || stock.ticker})
+Current price: $${stock.price.toFixed(2)}
+Today's change: ${stock.todayChange.toFixed(2)}%
+RSI: ${stock.rsi.toFixed(1)}
+Volume ratio vs average: ${stock.volRatio.toFixed(2)}x
+Signal score: ${stock.score}/100
+Risk score: ${stock.risk}/10
+Trade duration classification: ${stock.duration}
+Entry: $${stock.entry.toFixed(2)} | Target: $${stock.target.toFixed(2)} | Stop-loss: $${stock.stop.toFixed(2)}
+Target capped by: ${stock.cappedBy || 'none'}
+Recent news: ${stock.news ? stock.news.headline : 'none'}
+
+Answer three things:
+1. BUY NOW or WAIT, and the single most important reason why in one sentence.
+2. Two to three sentences on what makes this an opportunity or a risk at this exact moment.
+3. Risk of waiting — what specifically could change in the next 24 hours that would make this setup worse or disappear entirely, described in one sentence.
+
+Be direct. No disclaimers. Base everything on the data above.`;
+}
+
+function parseAIAnswers(text) {
+  const lines = text.split('\n');
+  const answers = ['', '', ''];
+  let current = -1;
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    const m = line.match(/^\**\s*([1-3])[\.\)]\s*(.*)$/);
+    if (m) {
+      current = parseInt(m[1], 10) - 1;
+      answers[current] = m[2];
+    } else if (current >= 0) {
+      answers[current] += (answers[current] ? ' ' : '') + line.replace(/^[-•*]\s*/, '');
     }
   }
 
-  if (!tip && bullets.length > 3) tip = bullets.splice(3).join(' ');
-  return { bullets: bullets.slice(0, 3), tip };
+  return answers.filter(Boolean);
 }
 
 async function testGroqConnection() {
@@ -2709,6 +2734,7 @@ let _priceChart = null;
 let _chartBarsDaily   = [];
 let _chartBarsHourly  = [];
 let _chartCurrentPrice = 0;
+let _modalStock = null;
 
 async function openStockModal(ticker) {
   const s = state.signals.find(x => x.ticker === ticker);
@@ -2737,6 +2763,8 @@ async function openStockModal(ticker) {
 
     const price   = (s?.price) || sorted[sorted.length-1]?.c || 0;
     _chartCurrentPrice = price;
+    const prevClose = closes.length >= 2 ? closes[closes.length-2] : price;
+    const fallbackTodayChange = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
     const rsi     = calcRSI(closes);
     const atr     = calcATR(sorted);
     const trimmedAtr = calcTrimmedATR(sorted);
@@ -2757,8 +2785,9 @@ async function openStockModal(ticker) {
       ...calcEntryTargetStop(price, trimmedAtr, classifyDuration(rsi, volRatio, closes), { high52, swingHigh10, ma20 }),
       score: 0, risk: calcRiskScore(price, atr, rsi, volRatio, false),
       priceRange: price <= 3 ? '$1–$3' : price <= 9 ? '$4–$9' : '$10–$20',
-      todayChange: 0, signal: 'WATCH', news: null
+      todayChange: fallbackTodayChange, signal: 'WATCH', news: null
     };
+    _modalStock = stock;
 
     // Always recompute new signal values from fresh bars
     let modalConsUpDays = 0;
@@ -2901,7 +2930,7 @@ async function openStockModal(ticker) {
 
       <div class="ai-section" id="ai-section">
         <div class="ai-title">AI Analysis <span style="font-size:10px;color:var(--muted)">(Groq)</span></div>
-        <button class="btn btn-sm btn-primary" onclick="loadAIAnalysis('${ticker}')">Get AI Analysis</button>
+        <button class="btn btn-sm btn-primary" onclick="loadAIAnalysis('${ticker}')">${state.portfolio.some(p => p.ticker === ticker) ? '📊 Should I Hold or Sell?' : '📊 Should I Buy Now?'}</button>
       </div>
     `;
 
@@ -3015,39 +3044,17 @@ function renderPriceChart(bars, currentPrice, isHourly = false) {
 }
 
 async function loadAIAnalysis(ticker) {
-  let sig = state.signals.find(s => s.ticker === ticker);
-
-  if (!sig) {
-    const pos = state.portfolio.find(p => p.ticker === ticker);
-    if (!pos) return;
-    const currentPrice = state.portfolioPrices[ticker] || pos.buyPrice;
-    sig = {
-      ticker: pos.ticker,
-      company: pos.company,
-      price: currentPrice,
-      todayChange: 0,
-      rsi: pos.rsiAtBuy || 50,
-      volRatio: pos.volRatioAtBuy || 1,
-      ma20: currentPrice,
-      score: pos.scoreAtBuy || 0,
-      risk: pos.riskAtBuy || 5,
-      duration: pos.duration,
-      priceRange: currentPrice <= 3 ? '$1–$3' : currentPrice <= 9 ? '$4–$9' : '$10–$20',
-      entry: pos.buyPrice,
-      target: pos.target,
-      stop: pos.stop,
-      volBuild: false,
-      meanReversion: false,
-      news: pos.newsAtBuy ? { headline: pos.newsAtBuy } : null,
-    };
-  }
+  const stock = _modalStock;
+  if (!stock) return;
+  const pos = state.portfolio.find(p => p.ticker === ticker);
 
   const sec = document.getElementById('ai-section');
   if (!sec) return;
   sec.innerHTML = `<div class="ai-title">AI Analysis</div><div class="ai-loading"><span class="spinner"></span> Analyzing with Groq…</div>`;
 
   try {
-    const result = await groqAnalyze(sig);
+    const prompt = pos ? buildAIPromptOwned(stock, pos) : buildAIPromptCandidate(stock);
+    const result = await groqAnalyze(ticker, prompt);
     renderAIResult(result);
   } catch(e) {
     console.error('Groq AI error:', e);
@@ -3060,8 +3067,7 @@ function renderAIResult(result) {
   const sec = document.getElementById('ai-section');
   if (!sec) return;
   let html = `<div class="ai-title">AI Analysis <span style="font-size:10px;color:var(--muted)">(Groq)</span></div>`;
-  result.bullets.forEach(b => { html += `<div class="ai-bullet">• ${b}</div>`; });
-  if (result.tip) html += `<div class="ai-tip"><strong>Strategy Tip:</strong> ${result.tip}</div>`;
+  result.answers.forEach(a => { html += `<div class="ai-bullet">• ${a}</div>`; });
   sec.innerHTML = html;
 }
 

@@ -946,15 +946,6 @@ input:checked + .toggle-slider::before { transform: translateX(20px); }
 }
 .ai-title { font-family: var(--cond); font-size: 13px; font-weight: 700; color: var(--blue); margin-bottom: 8px; }
 .ai-bullet { font-size: 13px; line-height: 1.5; margin-bottom: 6px; color: var(--text); }
-.ai-tip {
-  margin-top: 8px;
-  padding: 8px 10px;
-  background: rgba(0,180,216,0.08);
-  border-radius: var(--radius-sm);
-  border-left: 3px solid var(--blue);
-  font-size: 12px;
-  color: var(--text);
-}
 .ai-loading { color: var(--muted); font-size: 13px; text-align: center; padding: 16px; }
 
 /* ── Forms ── */
