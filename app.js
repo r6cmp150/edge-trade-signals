@@ -1784,23 +1784,34 @@ async function groqAnalyze(ticker, prompt) {
   return result;
 }
 
+const PORTFOLIO_TIER_LABELS = {
+  SELL_NOW: 'SELL NOW',
+  DANGER: 'DANGER — NEAR STOP-LOSS',
+  SELL_SOON: 'SELL SOON',
+  HOLD_TRACK: 'HOLDING — ON TRACK',
+  HOLD_RECOVER: 'HOLDING — RECOVERING'
+};
+
 function buildAIPromptOwned(stock, pos) {
   const days = Math.floor((Date.now() - new Date(pos.buyDate).getTime()) / 86400000);
-  const pnlDollar = (stock.price - pos.buyPrice) * pos.shares;
-  const pnlPct = ((stock.price - pos.buyPrice) / pos.buyPrice) * 100;
-  const warn = calcSellWarning(pos, stock.price, stock.rsi, 0).replace('_', ' ');
+  const livePrice = stock.livePrice ?? stock.price;
+  const liveRsi = stock.liveRsi ?? stock.rsi;
+  const pnlDollar = (livePrice - pos.buyPrice) * pos.shares;
+  const pnlPct = ((livePrice - pos.buyPrice) / pos.buyPrice) * 100;
+  const tier = getPortfolioTier(pos, livePrice, liveRsi, pnlDollar, pnlPct, days);
+  const warn = PORTFOLIO_TIER_LABELS[tier];
   return `You are a short-term trading analyst reviewing an open position. The investor
 already owns this stock and is deciding whether to hold or sell RIGHT NOW.
 
 Stock: ${stock.ticker} (${stock.company || stock.ticker})
 Purchase price: $${pos.buyPrice.toFixed(2)}
-Current price: $${stock.price.toFixed(2)}
+Current price: $${livePrice.toFixed(2)}
 Unrealized P&L: ${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)} (${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%)
 Days held: ${days} of intended ${durHoldLabel(pos.duration)} trade
 Original target: $${pos.target.toFixed(2)}
 Live target: $${stock.target.toFixed(2)}
 Stop-loss: $${pos.stop.toFixed(2)}
-Current RSI: ${stock.rsi.toFixed(1)}
+Current RSI: ${liveRsi.toFixed(1)}
 Volume ratio vs average: ${stock.volRatio.toFixed(2)}x
 Current signal score: ${stock.score}/100
 Current risk score: ${stock.risk}/10
@@ -2788,6 +2799,11 @@ async function openStockModal(ticker) {
       todayChange: fallbackTodayChange, signal: 'WATCH', news: null
     };
     _modalStock = stock;
+    // Genuinely live price/RSI from this modal's own fresh bar fetch — distinct from
+    // stock.price/stock.rsi, which can be a stale state.signals cache entry when the
+    // ticker is also in the current Signals scan. Used for owned-stock sell-warning calc.
+    _modalStock.livePrice = sorted[sorted.length-1]?.c || price;
+    _modalStock.liveRsi = rsi;
 
     // Always recompute new signal values from fresh bars
     let modalConsUpDays = 0;
@@ -3414,35 +3430,57 @@ function buildFridayFlag(p, currentPrice, pnlPct) {
   return `<div class="friday-flag">📅 Friday — are you comfortable holding this risk over the weekend?</div>`;
 }
 
-function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
+// Single source of truth for the Portfolio card's hold/sell tier — also used by
+// the Groq "owned stock" prompt so the two can never disagree with each other.
+function getPortfolioTier(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
   const pt = getPT();
   const ptMin = pt.getHours() * 60 + pt.getMinutes();
 
   // SELL NOW
-  if (currentPrice <= p.stop)
-    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Price hit stop-loss</div>`;
-  if (rsi > 78)
-    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — RSI ${rsi.toFixed(0)} — extremely overbought</div>`;
-  if (pnlPct <= -8)
-    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Down 8%+ from purchase</div>`;
-  if (p.duration === 'DAY' && ptMin >= 720 && isTradingDay(pt))
-    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Day trade — exit before close</div>`;
+  if (currentPrice <= p.stop) return 'SELL_NOW';
+  if (rsi > 78) return 'SELL_NOW';
+  if (pnlPct <= -8) return 'SELL_NOW';
+  if (p.duration === 'DAY' && ptMin >= 720 && isTradingDay(pt)) return 'SELL_NOW';
 
   // DANGER — within 3% of stop-loss
   const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
-  if (distToStop > 0 && distToStop <= 3)
-    return `<div class="port-banner port-danger"><strong>⚠️ DANGER — NEAR STOP-LOSS</strong> — Stop-loss at $${p.stop.toFixed(2)} — price is ${distToStop.toFixed(1)}% away. Consider exiting.</div>`;
+  if (distToStop > 0 && distToStop <= 3) return 'DANGER';
 
   // SELL SOON — within 5% of target
   const distToTarget = ((p.target - currentPrice) / p.target) * 100;
-  if (distToTarget >= 0 && distToTarget <= 5)
-    return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Target $${p.target.toFixed(2)} — you are ${distToTarget.toFixed(1)}% away</div>`;
+  if (distToTarget >= 0 && distToTarget <= 5) return 'SELL_SOON';
 
   // HOLD ON TRACK (profitable)
-  if (pnlDollar >= 0)
-    return `<div class="port-banner port-hold-track"><strong>✅ HOLD — ON TRACK</strong> — Up $${pnlDollar.toFixed(2)} (+${pnlPct.toFixed(1)}%) — holding strong</div>`;
+  if (pnlDollar >= 0) return 'HOLD_TRACK';
 
   // HOLD RECOVERING (negative but not at stop)
+  return 'HOLD_RECOVER';
+}
+
+function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
+  const tier = getPortfolioTier(p, currentPrice, rsi, pnlDollar, pnlPct, days);
+  const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
+  const distToTarget = ((p.target - currentPrice) / p.target) * 100;
+
+  if (tier === 'SELL_NOW') {
+    if (currentPrice <= p.stop)
+      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Price hit stop-loss</div>`;
+    if (rsi > 78)
+      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — RSI ${rsi.toFixed(0)} — extremely overbought</div>`;
+    if (pnlPct <= -8)
+      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Down 8%+ from purchase</div>`;
+    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Day trade — exit before close</div>`;
+  }
+
+  if (tier === 'DANGER')
+    return `<div class="port-banner port-danger"><strong>⚠️ DANGER — NEAR STOP-LOSS</strong> — Stop-loss at $${p.stop.toFixed(2)} — price is ${distToStop.toFixed(1)}% away. Consider exiting.</div>`;
+
+  if (tier === 'SELL_SOON')
+    return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Target $${p.target.toFixed(2)} — you are ${distToTarget.toFixed(1)}% away</div>`;
+
+  if (tier === 'HOLD_TRACK')
+    return `<div class="port-banner port-hold-track"><strong>✅ HOLD — ON TRACK</strong> — Up $${pnlDollar.toFixed(2)} (+${pnlPct.toFixed(1)}%) — holding strong</div>`;
+
   return `<div class="port-banner port-hold-recover"><strong>🟡 HOLD — RECOVERING</strong> — Down $${Math.abs(pnlDollar).toFixed(2)} (-${Math.abs(pnlPct).toFixed(1)}%) — stop-loss at $${p.stop.toFixed(2)}</div>`;
 }
 
