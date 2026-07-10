@@ -2841,7 +2841,6 @@ async function openStockModal(ticker) {
 
     const chgCls  = stock.todayChange >= 0 ? 'change-pos' : 'change-neg';
     const chgSign = stock.todayChange >= 0 ? '▲' : '▼';
-    const durBadge = durBadgeClass(stock.duration);
     const sigBadge = sigBadgeClass(stock.signal);
     const riskCls  = stock.risk <= 3 ? 'risk-low' : stock.risk <= 6 ? 'risk-mid' : 'risk-hi';
 
@@ -2850,21 +2849,35 @@ async function openStockModal(ticker) {
       : stock.rsi > 60 ? 'Bullish momentum'
       : 'Neutral';
 
-    const durWhy = stock.duration === 'DAY'
+    // When opened from Portfolio, Price Levels + duration reflect the actual position
+    // (recorded at purchase), not a fresh recalculation — RSI/volume/score/chart still do.
+    const displayEntry     = ownedPos ? ownedPos.buyPrice : stock.entry;
+    const displayStop      = ownedPos ? ownedPos.stop     : stock.stop;
+    const displayDuration  = ownedPos ? ownedPos.duration : stock.duration;
+    const originalTarget   = ownedPos ? ownedPos.target   : stock.target;
+    const originalCappedBy = ownedPos ? ownedPos.cappedByAtBuy : stock.cappedBy;
+    const liveTarget       = stock.target; // already the fresh figure the Groq prompt uses
+    const targetDriftPct   = ownedPos ? ((liveTarget - originalTarget) / originalTarget) * 100 : 0;
+    const showLiveTarget   = ownedPos && Math.abs(targetDriftPct) > 5;
+    const pnlDollar = ownedPos ? (price - ownedPos.buyPrice) * ownedPos.shares : null;
+    const pnlPct    = ownedPos ? ((price - ownedPos.buyPrice) / ownedPos.buyPrice) * 100 : null;
+
+    const durBadge = durBadgeClass(displayDuration);
+    const durWhy = displayDuration === 'DAY'
       ? 'RSI elevated or volume spike detected — quick exit expected'
-      : stock.duration === 'WEEK'
+      : displayDuration === 'WEEK'
       ? 'RSI moderate with upward trend and steady volume — patient setup'
       : 'Moderate RSI with volume confirmation — medium-term swing';
 
-    const upside =((stock.target - stock.price) / stock.price * 100).toFixed(1);
-    const downside = ((stock.stop - stock.price) / stock.price * 100).toFixed(1);
+    const upside = ((originalTarget - displayEntry) / displayEntry * 100).toFixed(1);
+    const downside = ((displayStop - displayEntry) / displayEntry * 100).toFixed(1);
 
     document.getElementById('stock-modal-body').innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
         <span class="price-mono" style="font-size:20px">$${price.toFixed(2)}</span>
         <span class="${chgCls}">${chgSign}${Math.abs(stock.todayChange).toFixed(1)}%</span>
         <span class="badge ${sigBadge}">${stock.signal} ${stock.score}</span>
-        <span class="badge ${durBadge}">${durBadgeText(stock.duration)}</span>
+        <span class="badge ${durBadge}">${durBadgeText(displayDuration)}</span>
         <span class="risk-pill ${riskCls}">Risk ${stock.risk}/10</span>
       </div>
 
@@ -2889,21 +2902,27 @@ async function openStockModal(ticker) {
         </div>
         <div class="level-cell">
           <div class="level-cell-label">Entry</div>
-          <div class="level-cell-val">$${stock.entry.toFixed(2)}</div>
+          <div class="level-cell-val">$${displayEntry.toFixed(2)}</div>
         </div>
         <div class="level-cell">
           <div class="level-cell-label">Target (▲${upside}%)</div>
-          <div class="level-cell-val pos">$${stock.target.toFixed(2)}</div>
-          ${stock.cappedBy ? `<div class="target-capped-note">Capped at ${stock.cappedBy}</div>` : ''}
+          <div class="level-cell-val pos">$${originalTarget.toFixed(2)}</div>
+          ${originalCappedBy ? `<div class="target-capped-note">Capped at ${originalCappedBy}</div>` : ''}
+          ${showLiveTarget ? `<div class="target-capped-note">Live: $${liveTarget.toFixed(2)} ⚠ Shifted</div>` : ''}
         </div>
         <div class="level-cell">
           <div class="level-cell-label">Stop-Loss (${downside}%)</div>
-          <div class="level-cell-val neg">$${stock.stop.toFixed(2)}</div>
+          <div class="level-cell-val neg">$${displayStop.toFixed(2)}</div>
         </div>
         <div class="level-cell">
           <div class="level-cell-label">20-Day MA</div>
           <div class="level-cell-val">$${stock.ma20.toFixed(2)}</div>
         </div>
+        ${ownedPos ? `
+        <div class="level-cell">
+          <div class="level-cell-label">Unrealized P&L</div>
+          <div class="level-cell-val ${pnlDollar>=0?'pos':'neg'}">${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)} (${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%)</div>
+        </div>` : ''}
       </div>
 
       <div class="section-label">Signal Breakdown</div>
@@ -2948,7 +2967,7 @@ async function openStockModal(ticker) {
       </div>` : ''}
       <div class="signal-row">
         <span class="signal-key">Duration</span>
-        <span class="signal-val">${durBadgeText(stock.duration)} — ${durWhy}</span>
+        <span class="signal-val">${durBadgeText(displayDuration)} — ${durWhy}</span>
       </div>
       <div style="font-size:10px;color:var(--muted);padding:2px 0 8px;line-height:1.4">
         Duration is an estimate based on historical volatility. Always follow sell warnings over duration labels.
