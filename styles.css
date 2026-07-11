@@ -477,6 +477,19 @@ a { color: var(--blue); }
   color: var(--red);
 }
 
+/* ── Macro Condition Banner ── */
+.macro-banner {
+  margin: 0 12px 10px;
+  background: rgba(0,180,216,0.08);
+  border: 1px solid rgba(0,180,216,0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+.macro-banner strong { color: var(--blue); }
+
 /* ── Badges ── */
 .badge {
   font-family: var(--cond);
@@ -1277,6 +1290,7 @@ input:checked + .toggle-slider::before { transform: translateX(20px); }
 .sb-check { width: 14px; flex-shrink: 0; }
 .sb-chk-yes { color: var(--green); }
 .sb-chk-no  { color: var(--muted); }
+.sb-chk-neutral { color: var(--muted); }
 .sb-label { flex: 1; color: var(--text-dim); }
 .sb-pts { min-width: 46px; text-align: right; }
 .sb-pos  { color: var(--green); }

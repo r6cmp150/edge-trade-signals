@@ -1,13 +1,20 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.2.0
+// EDGE Trade Signals — app.js  v1.3.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.3.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
+// VIX excluded — it's a CBOE index, not an equity, and is not obtainable through
+// Alpaca's /stocks endpoints on any tier. See Macro Market Overlay addendum.
+const MACRO_ETFS = ['SPY', 'XLE', 'XLK', 'XBI', 'XLF'];
+const MACRO_CONDITIONS = [
+  'RISK_OFF', 'GEOPOLITICAL', 'TECH_ROTATION_OUT', 'BROAD_RALLY', 'MOMENTUM_DAY',
+  'SECTOR_WEAKNESS_BIOTECH', 'SECTOR_WEAKNESS_ENERGY', 'SECTOR_WEAKNESS_TECH', 'CHOPPY'
+];
 
 // ── STOCK UNIVERSES ──────────────────────────────────────────────
 const STOCK_UNIVERSES = {
@@ -1472,6 +1479,7 @@ let state = {
   portfolioPrices: {}, // ticker → live price — session only
   ahSnapshots: {},     // ticker → SIP snapshot — session only, AH mode
   spyChange: 0,        // SPY today % change — updated each screener run
+  macroContext: null,  // { changes, condition, ambiguous, source, explanation, fetchedAt } — session only, fetched once
   soldCurrentPrices: {}, // ticker → current price
   loading: false,
   _confirmCb: null,
@@ -1774,6 +1782,230 @@ async function testAlpacaConnection() {
   } catch(e) { return false; }
 }
 
+// ── 6b. MACRO MARKET OVERLAY ─────────────────────────────────────
+
+// Step 1: pattern-match today's ETF moves into a market condition.
+// Evaluated in spec order — `matched` preserves that order so matched[0] is the
+// first-match winner; matched.length > 1 signals an ambiguous day for Step 2 (Groq).
+function classifyMacroCondition(changes) {
+  const spy = changes.SPY || 0;
+  const xle = changes.XLE || 0;
+  const xlk = changes.XLK || 0;
+  const xbi = changes.XBI || 0;
+  const xlf = changes.XLF || 0;
+  const sectors = [xle, xlk, xbi, xlf];
+
+  const matched = [];
+
+  // RISK_OFF — VIX removed (unavailable via Alpaca /stocks); substituted with
+  // a breadth check (3+ of 4 sector ETFs also negative) to keep the "broad
+  // panic, everything dropping" intent. Confirmed with Roman before implementing.
+  if (spy <= -2 && sectors.filter(v => v < 0).length >= 3) matched.push('RISK_OFF');
+
+  if (spy <= -1 && xle >= 1) matched.push('GEOPOLITICAL');
+
+  if (xlk <= -1.5 && (xle >= 0.5 || xlf >= 0.5)) matched.push('TECH_ROTATION_OUT');
+
+  if (spy >= 1 && sectors.filter(v => v > 0).length >= 3) matched.push('BROAD_RALLY');
+
+  if (spy >= 1.5 && xlk >= 1.5) matched.push('MOMENTUM_DAY');
+
+  // Sector weakness — SPY flat or only mildly down (<1%)
+  if (spy > -1) {
+    if (xbi <= -1.5) matched.push('SECTOR_WEAKNESS_BIOTECH');
+    if (xle <= -1.5) matched.push('SECTOR_WEAKNESS_ENERGY');
+    if (xlk <= -1.5) matched.push('SECTOR_WEAKNESS_TECH');
+  }
+
+  const condition = matched.length ? matched[0] : 'CHOPPY';
+  return { condition, matched };
+}
+
+// Fetches today's % change for the macro ETF basket and pattern-matches a
+// market condition. Called once per session (see runScreener) — result is
+// cached on state.macroContext, not re-fetched per scan or per card.
+async function fetchMacroContext() {
+  let changes;
+  try {
+    const snaps = await fetchSnapshots(MACRO_ETFS);
+    changes = {};
+    MACRO_ETFS.forEach(t => {
+      const snap = snaps[t];
+      const price = snap?.dailyBar?.c || snap?.latestTrade?.p || 0;
+      const prevClose = snap?.prevDailyBar?.c || price;
+      changes[t] = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+    });
+  } catch(e) {
+    console.warn('Macro context fetch error', e.message);
+    return null;
+  }
+
+  const { condition, matched } = classifyMacroCondition(changes);
+
+  const context = {
+    changes,             // { SPY, XLE, XLK, XBI, XLF } — % change today
+    condition,            // pattern-match result (Step 1); may be revised by Groq in Step 2
+    matchedConditions: matched,
+    ambiguous: matched.length > 1,
+    source: 'pattern',    // becomes 'groq' if Step 2 resolves it
+    explanation: null,    // populated by Groq in Step 2
+    fetchedAt: Date.now(),
+  };
+
+  // Step 2: only call Groq when the pattern match is ambiguous or CHOPPY.
+  // fetchMacroContext() itself only runs once per session (see runScreener),
+  // so this single call is the session-level cache — no separate cache needed.
+  if (condition === 'CHOPPY' || context.ambiguous) {
+    const resolved = await resolveMacroConditionWithGroq(changes);
+    if (resolved) {
+      context.condition = resolved.condition;
+      context.explanation = resolved.explanation;
+      context.source = 'groq';
+    }
+    // else: Groq unavailable/failed — context.condition stays the Step 1
+    // pattern-match result (CHOPPY, or the first ambiguous match), per spec.
+  }
+
+  return context;
+}
+
+// Step 2: fetch the last 5 SPY/QQQ headlines from the last 6 hours, for the
+// Groq clarification prompt.
+async function fetchMacroHeadlines() {
+  const news = await fetchNewsForTickers(['SPY', 'QQQ']);
+  const cutoff = Date.now() - 6 * 3600000;
+  return news
+    .filter(n => new Date(n.created_at).getTime() >= cutoff)
+    .slice(0, 5);
+}
+
+function buildMacroGroqPrompt(changes, headlines) {
+  const headlineLines = headlines.length
+    ? headlines.map(h => h.headline).join('\n')
+    : '(no recent headlines available)';
+  return `You are a macro market analyst. Based on these ETF movements and headlines,
+classify today's market condition as exactly one of:
+RISK_OFF, GEOPOLITICAL, TECH_ROTATION_OUT, BROAD_RALLY, MOMENTUM_DAY,
+SECTOR_WEAKNESS_BIOTECH, SECTOR_WEAKNESS_ENERGY, SECTOR_WEAKNESS_TECH, CHOPPY
+
+ETF movements today:
+SPY: ${changes.SPY.toFixed(2)}%
+XLE: ${changes.XLE.toFixed(2)}%
+XLK: ${changes.XLK.toFixed(2)}%
+XBI: ${changes.XBI.toFixed(2)}%
+XLF: ${changes.XLF.toFixed(2)}%
+
+Recent market headlines:
+${headlineLines}
+
+Respond with ONLY the condition label and a single sentence explanation.
+Example: "GEOPOLITICAL — Oil prices spiking on Middle East tensions driving
+energy up while broad market sells off."`;
+}
+
+// Step 2: single Groq call to resolve an ambiguous/CHOPPY pattern match.
+// Returns { condition, explanation } on success, or null on any failure
+// (missing key, network error, unparseable response) so the caller falls
+// back to the Step 1 pattern-match result.
+async function resolveMacroConditionWithGroq(changes) {
+  const key = state.settings.groqKey;
+  if (!key) return null;
+
+  try {
+    const headlines = await fetchMacroHeadlines();
+    const prompt = buildMacroGroqPrompt(changes, headlines);
+
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.2,
+        max_tokens: 150
+      })
+    });
+    if (!r.ok) throw new Error(`Groq ${r.status}`);
+    const data = await r.json();
+    const text = (data.choices?.[0]?.message?.content || '').trim().replace(/^["']|["']$/g, '');
+
+    const re = new RegExp(`^\\**\\s*(${MACRO_CONDITIONS.join('|')})\\**\\s*[—-]+\\s*(.*)$`, 's');
+    const match = text.match(re);
+    if (!match) return null;
+
+    return { condition: match[1], explanation: match[2].trim() };
+  } catch(e) {
+    console.warn('Macro Groq resolution error', e.message);
+    return null;
+  }
+}
+
+// Step 3: category-specific score adjustments. Keys match state.selectedUniverse
+// (BIOTECH/ENERGY/TECH/BROAD), which is also how category is threaded into
+// scoreStock() — see "How category is stored" note at the Macro Overlay call site.
+const MACRO_ADJUSTMENTS = {
+  RISK_OFF:                { BIOTECH: -20, ENERGY: -15, TECH: -20, BROAD: -20 },
+  GEOPOLITICAL:            { BIOTECH: -10, ENERGY:  10, TECH: -15, BROAD: -10 },
+  TECH_ROTATION_OUT:       { BIOTECH:  -5, ENERGY:  10, TECH: -20, BROAD:  -5 },
+  BROAD_RALLY:             { BIOTECH:  10, ENERGY:   5, TECH:  10, BROAD:  10 },
+  MOMENTUM_DAY:            { BIOTECH:   5, ENERGY:   0, TECH:  15, BROAD:   5 },
+  SECTOR_WEAKNESS_BIOTECH: { BIOTECH: -15, ENERGY:   0, TECH:   0, BROAD:  -5 },
+  SECTOR_WEAKNESS_ENERGY:  { BIOTECH:   0, ENERGY: -15, TECH:   0, BROAD:  -5 },
+  SECTOR_WEAKNESS_TECH:    { BIOTECH:   0, ENERGY:   0, TECH: -15, BROAD:  -5 },
+  CHOPPY:                  { BIOTECH:   0, ENERGY:   0, TECH:   0, BROAD:   0 },
+};
+
+function getMacroAdjustment(condition, category) {
+  if (!condition || !category) return 0;
+  return MACRO_ADJUSTMENTS[condition]?.[category] ?? 0;
+}
+
+// Step 4: display helpers. Which ETF(s) to quote in the Score Breakdown row,
+// per condition — mirrors the spec's own examples (GEOPOLITICAL: "SPY -1.8%,
+// XLE +2.1%"; BROAD_RALLY: "SPY +1.4%").
+const MACRO_DISPLAY_ETFS = {
+  RISK_OFF: ['SPY'],
+  GEOPOLITICAL: ['SPY', 'XLE'],
+  TECH_ROTATION_OUT: ['XLK', 'XLE', 'XLF'],
+  BROAD_RALLY: ['SPY'],
+  MOMENTUM_DAY: ['SPY', 'XLK'],
+  SECTOR_WEAKNESS_BIOTECH: ['XBI'],
+  SECTOR_WEAKNESS_ENERGY: ['XLE'],
+  SECTOR_WEAKNESS_TECH: ['XLK'],
+};
+
+function formatMacroConditionDetail(condition, changes) {
+  if (!condition || condition === 'CHOPPY' || !changes) return 'mixed signals';
+  const etfs = MACRO_DISPLAY_ETFS[condition] || ['SPY'];
+  return etfs
+    .filter(t => changes[t] != null)
+    .map(t => `${t} ${changes[t] >= 0 ? '+' : ''}${changes[t].toFixed(1)}%`)
+    .join(', ');
+}
+
+// Fallback banner copy when Groq wasn't invoked (clear, unambiguous pattern
+// match) — lifted directly from each condition's "Interpretation" line in the
+// spec's Step 1 table, so the banner always has something meaningful to show.
+const MACRO_INTERPRETATIONS = {
+  RISK_OFF: 'Broad panic selling, everything dropping.',
+  GEOPOLITICAL: 'Geopolitical event driving oil up while broad market sells.',
+  TECH_ROTATION_OUT: 'Money rotating out of tech into value/energy.',
+  BROAD_RALLY: 'Genuine broad market strength.',
+  MOMENTUM_DAY: 'Risk-on momentum day, growth stocks outperforming.',
+  SECTOR_WEAKNESS_BIOTECH: 'Sector-specific selling in biotech, not a broad market event.',
+  SECTOR_WEAKNESS_ENERGY: 'Sector-specific selling in energy, not a broad market event.',
+  SECTOR_WEAKNESS_TECH: 'Sector-specific selling in tech, not a broad market event.',
+};
+
+// Signals tab banner — omitted entirely on CHOPPY days per spec ("no clutter
+// on normal days").
+function buildMacroBanner() {
+  const ctx = state.macroContext;
+  if (!ctx || !ctx.condition || ctx.condition === 'CHOPPY') return '';
+  const text = ctx.explanation || MACRO_INTERPRETATIONS[ctx.condition] || '';
+  return `<div class="macro-banner">📊 <strong>${ctx.condition}</strong> — ${text}</div>`;
+}
+
 // ── 7. GROQ API ───────────────────────────────────────────────────
 
 async function groqAnalyze(ticker, prompt) {
@@ -2033,7 +2265,7 @@ function calcRiskScore(price, atr, rsi, volRatio, hasNegNews) {
   return Math.min(10, Math.max(1, r));
 }
 
-function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
+function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0, category = null) {
   const price = snap.dailyBar?.c || snap.latestTrade?.p || 0;
   const prevClose = snap.prevDailyBar?.c || price;
   const volume = snap.dailyBar?.v || 0;
@@ -2139,6 +2371,16 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
   const volTrend = volBuild ? 'building' : volRatio >= 1.5 ? 'spike' : 'normal';
 
   score = Math.max(0, Math.min(100, score));
+
+  // Macro Market Overlay (Step 3): category-specific adjustment applied on top
+  // of the base score above, which is otherwise untouched. Re-clamped 0-100
+  // per spec. macroCondition is null (adjustment 0) if macroContext hasn't
+  // loaded yet or the fetch failed — never blocks scoring.
+  const macroCondition = state.macroContext?.condition || null;
+  const macroAdjustment = getMacroAdjustment(macroCondition, category);
+  const macroChanges = state.macroContext?.changes || null;
+  score = Math.max(0, Math.min(100, score + macroAdjustment));
+
   const risk = calcRiskScore(price, atr, rsi, volRatio, hasNegNews);
   const priceRange = price <= 3 ? '$1–$3' : price <= 9 ? '$4–$9' : '$10–$20';
   const signal = score >= 80 ? 'STRONG BUY' : score >= 50 ? 'SOFT BUY' : 'WATCH';
@@ -2151,6 +2393,7 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0) {
     volBuild, meanReversion, maPct, volTrend, signalsFired,
     volBuildNearMiss, meanReversionNearMiss,
     consUpDays, consUpPts, spyChange: spyChangePct, rsVsSPY, relStrengthPts,
+    macroCondition, macroAdjustment, macroChanges, category,
     bars: sorted
   };
 }
@@ -2167,6 +2410,14 @@ async function runScreener() {
   renderSkeletons();
 
   try {
+    // 0. Macro context — fetched once per session, cached on state.macroContext.
+    // Failure is non-fatal: scoring/UI just treat a null macroContext as no adjustment.
+    if (!state.macroContext) {
+      try {
+        state.macroContext = await fetchMacroContext();
+      } catch(e) { console.warn('Macro context error', e.message); }
+    }
+
     // 1. Batch snapshots
     const snapshots = await fetchSnapshots(TICKERS, updateScanProgress);
 
@@ -2222,9 +2473,10 @@ async function runScreener() {
     }
 
     // 7. Score
+    const category = state.selectedUniverse || 'BROAD';
     const scored = candidates.map(([ticker, snap]) => {
       const bars = allBars[ticker] || [];
-      return scoreStock(ticker, snap, bars, newsMap[ticker] || null, spyChangePct);
+      return scoreStock(ticker, snap, bars, newsMap[ticker] || null, spyChangePct, category);
     }).filter(s => s && s.score >= 20);
 
     // 7. Apply under-$2 filter
@@ -2302,6 +2554,7 @@ function renderSignalsTab() {
       <button class="btn btn-sm btn-primary" onclick="handleRefresh()">↻ Refresh</button>
     </div>
     ${getFreshnessHtml()}
+    ${buildMacroBanner()}
   `;
 
   // Exit alerts (afternoon mode)
@@ -2655,7 +2908,7 @@ function computeScoreBreakdown(s) {
   const spySign = (s.spyChange || 0) >= 0 ? '+' : '';
   const rsSign  = rsVsSPY >= 0 ? '+' : '';
 
-  return [
+  const rows = [
     { key: 'vol',    short: 'vol',       label: `Volume spike (${s.volRatio.toFixed(1)}× avg)`,                                 pts: volPts,     fired: volPts > 0 },
     { key: 'mom',    short: 'momentum',  label: `Price momentum (${s.todayChange>=0?'+':''}${s.todayChange.toFixed(1)}% today)`, pts: momPts,     fired: momPts > 0 },
     { key: 'rsi',    short: 'RSI',       label: `RSI position (${s.rsi.toFixed(0)})`,                                           pts: rsiPts,     fired: rsiPts > 0 },
@@ -2665,6 +2918,32 @@ function computeScoreBreakdown(s) {
     { key: 'vbuild', short: 'vol build', label: `Volume build (3 days rising)`,                                                 pts: volBuildPts, fired: volBuildPts > 0 },
     { key: 'rev',    short: 'reversal',  label: `Mean reversion`,                                                               pts: meanRevPts, fired: meanRevPts > 0 },
   ];
+
+  // Macro Market Overlay (Step 4) — only shown once macroContext has actually
+  // loaded (s.macroCondition truthy); omitted entirely otherwise rather than
+  // faking a CHOPPY/0pt row for data that was never fetched.
+  if (s.macroCondition) {
+    const macroPts = s.macroAdjustment || 0;
+    rows.push({
+      key: 'macro', short: 'macro',
+      label: `Market condition: ${s.macroCondition} (${formatMacroConditionDetail(s.macroCondition, s.macroChanges)})`,
+      pts: macroPts,
+      fired: macroPts > 0,
+      neutral: macroPts === 0,
+    });
+  }
+
+  return rows;
+}
+
+// Every row here fires at pts>=0 (never negative) except the Step 4 macro
+// row, which can be negative (✗), zero-but-neutral/CHOPPY (—), or positive
+// (✓). `neutral` is only set on rows where a 0-pt result should render as
+// "—" instead of the default "✗" for not-fired.
+function sbCheckIcon(r) {
+  if (r.pts > 0) return { icon: '✓', cls: 'sb-chk-yes' };
+  if (r.pts < 0) return { icon: '✗', cls: 'sb-chk-no' };
+  return r.neutral ? { icon: '—', cls: 'sb-chk-neutral' } : { icon: '✗', cls: 'sb-chk-no' };
 }
 
 function buildScoreBreakdown(s) {
@@ -2677,8 +2956,9 @@ function buildScoreBreakdown(s) {
   const rowsHtml = rows.map(r => {
     const ptsCls = r.pts > 0 ? 'sb-pos' : r.pts < 0 ? 'sb-neg' : 'sb-zero';
     const ptsStr = r.pts > 0 ? `+${r.pts}` : `${r.pts}`;
+    const { icon, cls } = sbCheckIcon(r);
     return `<div class="sb-row">
-      <span class="sb-check ${r.fired ? 'sb-chk-yes' : 'sb-chk-no'}">${r.fired ? '✓' : '✗'}</span>
+      <span class="sb-check ${cls}">${icon}</span>
       <span class="sb-label">${r.label}</span>
       <span class="sb-pts ${ptsCls}">${ptsStr} pts</span>
     </div>`;
@@ -2700,8 +2980,9 @@ function buildModalScoreBreakdown(s) {
   const rowsHtml = rows.map(r => {
     const ptsCls = r.pts > 0 ? 'sb-pos' : r.pts < 0 ? 'sb-neg' : 'sb-zero';
     const ptsStr = r.pts > 0 ? `+${r.pts}` : r.pts === 0 ? '+0' : `${r.pts}`;
+    const { icon, cls } = sbCheckIcon(r);
     return `<div class="sb-row msb-row">
-      <span class="sb-check ${r.fired ? 'sb-chk-yes' : 'sb-chk-no'}">${r.fired ? '✓' : '✗'}</span>
+      <span class="sb-check ${cls}">${icon}</span>
       <span class="sb-label msb-label">${r.label}</span>
       <span class="sb-pts ${ptsCls}">${ptsStr} pts</span>
     </div>`;
@@ -3224,6 +3505,7 @@ function confirmAddPortfolio(ticker) {
     cappedByAtBuy: sig?.cappedBy || null,
     rawAtrAtBuy:     sig?.atr        ?? null,
     trimmedAtrAtBuy: sig?.trimmedAtr ?? null,
+    macroConditionAtBuy: sig?.macroCondition || null,
     peakPrice:   price,
   };
 
@@ -3605,6 +3887,7 @@ function confirmMarkSold(posId) {
     cappedByAtBuy: pos.cappedByAtBuy || null,
     rawAtrAtBuy:     pos.rawAtrAtBuy     ?? null,
     trimmedAtrAtBuy: pos.trimmedAtrAtBuy ?? null,
+    macroConditionAtBuy: pos.macroConditionAtBuy || null,
     duration: pos.duration,
     priceRange: salePrice <= 3 ? '$1–$3' : salePrice <= 9 ? '$4–$9' : '$10–$20',
     sellWarningAtSale: currentWarn,
@@ -3772,6 +4055,18 @@ function generateClaudeReport() {
 
   const volBucket = (lo, hi, label) => {
     const t = sold.filter(s => (s.volRatioAtBuy||0) >= lo && (s.volRatioAtBuy||0) < hi);
+    const tw = t.filter(s => s.pnlPct > 0);
+    return `  ${label}: ${t.length} trades | ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}% win rate | avg outcome ${t.length?avg(t,s=>s.pnlPct).toFixed(1):'—'}%`;
+  };
+
+  const macroCondStats = (condition, label) => {
+    const t = sold.filter(s => s.macroConditionAtBuy === condition);
+    const tw = t.filter(s => s.pnlPct > 0);
+    return `  ${label}: ${t.length} trades | ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}% win rate | avg outcome ${t.length?avg(t,s=>s.pnlPct).toFixed(1):'—'}%`;
+  };
+
+  const macroSectorWeaknessStats = (label) => {
+    const t = sold.filter(s => (s.macroConditionAtBuy||'').startsWith('SECTOR_WEAKNESS'));
     const tw = t.filter(s => s.pnlPct > 0);
     return `  ${label}: ${t.length} trades | ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}% win rate | avg outcome ${t.length?avg(t,s=>s.pnlPct).toFixed(1):'—'}%`;
   };
@@ -3948,6 +4243,17 @@ ${(()=>{
   Avg trimmed ATR across all trades: ${avgTrimmed.toFixed(3)}
   Avg reduction from trimming:       ${reductionPct.toFixed(1)}% smaller`;
 })()}
+
+=== MACRO CONDITION AT TIME OF PURCHASE ===
+
+Trades by market condition:
+${macroCondStats('RISK_OFF',          'RISK_OFF:            ')}
+${macroCondStats('GEOPOLITICAL',      'GEOPOLITICAL:        ')}
+${macroCondStats('TECH_ROTATION_OUT', 'TECH_ROTATION_OUT:   ')}
+${macroCondStats('BROAD_RALLY',       'BROAD_RALLY:         ')}
+${macroCondStats('MOMENTUM_DAY',      'MOMENTUM_DAY:        ')}
+${macroSectorWeaknessStats(          'SECTOR_WEAKNESS_*:   ')}
+${macroCondStats('CHOPPY',            'CHOPPY:              ')}
 
 === FULL TRADE HISTORY ===
 
