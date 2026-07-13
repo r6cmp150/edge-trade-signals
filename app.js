@@ -3683,8 +3683,12 @@ function calcSellWarning(position, currentPrice, rsi, atr) {
   if (rsi > 78) return 'SELL_NOW';
   if (pnlPct <= -8) return 'SELL_NOW';
   if (position.duration === 'DAY' && ptMin >= 720 && isTradingDay(pt)) return 'SELL_NOW'; // past 12pm
+  // More than 10% past original target — take the profit, regardless of other conditions
+  if (currentPrice > position.target * 1.10) return 'SELL_NOW';
 
   // SELL SOON conditions
+  // Note: target*1.05 (more than 5% past target) is already covered by the 0.97
+  // threshold below — any price above 105% of target is also above 97% of it.
   const toTarget = currentPrice >= position.target * 0.97;
   if (toTarget) return 'SELL_SOON';
   if (rsi >= 72) return 'SELL_SOON';
@@ -3763,12 +3767,17 @@ function getPortfolioTier(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
   if (rsi > 78) return 'SELL_NOW';
   if (pnlPct <= -8) return 'SELL_NOW';
   if (p.duration === 'DAY' && ptMin >= 720 && isTradingDay(pt)) return 'SELL_NOW';
+  // More than 10% past original target — take the profit, regardless of other conditions
+  if (currentPrice > p.target * 1.10) return 'SELL_NOW';
 
   // DANGER — within 3% of stop-loss
   const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
   if (distToStop > 0 && distToStop <= 3) return 'DANGER';
 
-  // SELL SOON — within 5% of target
+  // SELL SOON — more than 5% past original target, regardless of other conditions
+  if (currentPrice > p.target * 1.05) return 'SELL_SOON';
+
+  // SELL SOON — within 5% of target (approaching from below)
   const distToTarget = ((p.target - currentPrice) / p.target) * 100;
   if (distToTarget >= 0 && distToTarget <= 5) return 'SELL_SOON';
 
@@ -3791,14 +3800,19 @@ function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
       return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — RSI ${rsi.toFixed(0)} — extremely overbought</div>`;
     if (pnlPct <= -8)
       return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Down 8%+ from purchase</div>`;
+    if (currentPrice > p.target * 1.10)
+      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — ${(-distToTarget).toFixed(1)}% past target $${p.target.toFixed(2)} — take the profit</div>`;
     return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Day trade — exit before close</div>`;
   }
 
   if (tier === 'DANGER')
     return `<div class="port-banner port-danger"><strong>⚠️ DANGER — NEAR STOP-LOSS</strong> — Stop-loss at $${p.stop.toFixed(2)} — price is ${distToStop.toFixed(1)}% away. Consider exiting.</div>`;
 
-  if (tier === 'SELL_SOON')
+  if (tier === 'SELL_SOON') {
+    if (currentPrice > p.target)
+      return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — ${(-distToTarget).toFixed(1)}% past target $${p.target.toFixed(2)} — exceeded goal</div>`;
     return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Target $${p.target.toFixed(2)} — you are ${distToTarget.toFixed(1)}% away</div>`;
+  }
 
   if (tier === 'HOLD_TRACK')
     return `<div class="port-banner port-hold-track"><strong>✅ HOLD — ON TRACK</strong> — Up $${pnlDollar.toFixed(2)} (+${pnlPct.toFixed(1)}%) — holding strong</div>`;
