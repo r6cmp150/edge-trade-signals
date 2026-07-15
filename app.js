@@ -2592,9 +2592,11 @@ function renderSignalsTab() {
       <button class="btn btn-primary" onclick="runScreener()">↻ Refresh</button>
     </div>`;
   } else {
-    const sb  = state.signals.filter(s => s.signal === 'STRONG BUY').length;
-    const sfb = state.signals.filter(s => s.signal === 'SOFT BUY').length;
-    const w   = state.signals.filter(s => s.signal === 'WATCH').length;
+    // Exclude already-owned positions so the summary counts match the cards below.
+    const unowned = state.signals.filter(s => !getOwnedPosition(s.ticker));
+    const sb  = unowned.filter(s => s.signal === 'STRONG BUY').length;
+    const sfb = unowned.filter(s => s.signal === 'SOFT BUY').length;
+    const w   = unowned.filter(s => s.signal === 'WATCH').length;
     const total = TICKERS.length;
     const universe = state.selectedUniverse || 'BROAD';
     html += `<div class="scan-summary">Scanned ${total} stocks <span class="ss-universe">[${universe}]</span> — <span class="ss-strong">${sb} strong buy</span>, <span class="ss-soft">${sfb} soft buy</span>, <span class="ss-watch">${w} watch</span></div>`;
@@ -2686,6 +2688,8 @@ function sigToggleKey(signal) {
 
 function getFilteredSignals() {
   return state.signals.filter(s => {
+    // Already-owned positions don't belong in buy-signal results.
+    if (getOwnedPosition(s.ticker)) return false;
     if (!state.signalToggles[sigToggleKey(s.signal)]) return false;
     const { priceRange, duration } = state.filters;
     if (priceRange !== 'all' && s.priceRange !== priceRange) return false;
