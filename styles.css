@@ -1215,6 +1215,18 @@ input:checked + .toggle-slider::before { transform: translateX(20px); }
 .pf-track-down { background: rgba(255,77,109,0.12); color: var(--red);   border: 1px solid rgba(255,77,109,0.3); }
 .pf-track-flat { background: rgba(255,209,102,0.1); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
 
+/* ── Momentum Protection Indicator ── */
+.pf-momentum {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--blue);
+  background: rgba(0,180,216,0.08);
+  border: 1px solid rgba(0,180,216,0.25);
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  margin-bottom: 8px;
+}
+
 /* ── Card News Section ── */
 .card-news-section {
   margin-top: 8px;

@@ -1,11 +1,11 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.3.0
+// EDGE Trade Signals — app.js  v1.4.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.4.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 // VIX excluded — it's a CBOE index, not an equity, and is not obtainable through
@@ -3507,6 +3507,9 @@ function confirmAddPortfolio(ticker) {
     trimmedAtrAtBuy: sig?.trimmedAtr ?? null,
     macroConditionAtBuy: sig?.macroCondition || null,
     peakPrice:   price,
+    peakPriceDate: date,
+    momentumProtectionActivated: false,
+    rsiSuspendedAtGainPct: null,
   };
 
   state.portfolio.push(position);
@@ -3569,9 +3572,23 @@ async function renderPortfolioTab() {
     const liveTarget = trimmedAtr > 0 ? calcEntryTargetStop(currentPrice, trimmedAtr, p.duration).target : null;
     p.liveTarget = liveTarget;
 
-    // Update peak
+    // Update peak + Momentum Protection state (Rule 1). Activation is sticky —
+    // once true it never reverts, even if price later pulls back under +20%,
+    // so RSI/target suspension (Rule 2) doesn't flicker on and off.
     if (currentPrice > (p.peakPrice || 0)) {
       p.peakPrice = currentPrice;
+      p.peakPriceDate = new Date().toISOString().split('T')[0];
+      persist('portfolio');
+    }
+    if (!p.momentumProtectionActivated && p.peakPrice >= p.buyPrice * 1.20) {
+      p.momentumProtectionActivated = true;
+      persist('portfolio');
+    }
+    // Rule 5 support: first time RSI hits the (soon-to-be-suspended) 72+ threshold
+    // while protected, snapshot the gain% at that instant — sticky, never overwritten —
+    // so the report can later show what an RSI-based exit would have left on the table.
+    if (p.momentumProtectionActivated && p.rsiSuspendedAtGainPct == null && rsi >= 72) {
+      p.rsiSuspendedAtGainPct = ((currentPrice - p.buyPrice) / p.buyPrice) * 100;
       persist('portfolio');
     }
 
@@ -3600,6 +3617,12 @@ async function renderPortfolioTab() {
     const targetDisplay = (liveTarget && Math.abs(targetDriftPct) > 5)
       ? `Original target: $${p.target.toFixed(2)} → Live target: $${liveTarget.toFixed(2)} <span class="pf-shifted">⚠ Shifted</span>`
       : `Target $${p.target.toFixed(2)}`;
+
+    // Rule 4: trailing stop recalculated from peakPrice every refresh, same threshold
+    // as the SELL_SOON trailing check in getPortfolioTier/calcSellWarning.
+    const momentumBadge = p.momentumProtectionActivated
+      ? `<div class="pf-momentum">🚀 Momentum Protection active — trailing stop $${(p.peakPrice * 0.85).toFixed(2)}</div>`
+      : '';
 
     // Build AH row for portfolio card
     let pfAHHtml = '';
@@ -3645,6 +3668,7 @@ async function renderPortfolioTab() {
         Bought: $${p.buyPrice.toFixed(2)} → Now: $${currentPrice.toFixed(2)}
       </div>
       ${pfAHHtml}
+      ${momentumBadge}
       <div class="card-sub">
         ${targetDisplay} · Stop $${p.stop.toFixed(2)} · RSI ${rsi.toFixed(0)}
       </div>
@@ -3677,30 +3701,44 @@ function calcSellWarning(position, currentPrice, rsi, atr) {
   const pt = getPT();
   const ptMin = pt.getHours() * 60 + pt.getMinutes();
   const days = Math.floor((Date.now() - new Date(position.buyDate).getTime()) / 86400000);
+  // Momentum Protection (Rule 2): once a position has ever run 20%+ above purchase,
+  // RSI-based warnings are suspended for good — see momentumProtectionActivated in
+  // renderPortfolioTab. Stop-loss, -8% loss, and day-trade cutoff stay active regardless.
+  const inProtection = !!position.momentumProtectionActivated;
 
   // SELL NOW conditions
   if (currentPrice <= position.stop) return 'SELL_NOW';
-  if (rsi > 78) return 'SELL_NOW';
+  if (!inProtection && rsi > 78) return 'SELL_NOW';
   if (pnlPct <= -8) return 'SELL_NOW';
   if (position.duration === 'DAY' && ptMin >= 720 && isTradingDay(pt)) return 'SELL_NOW'; // past 12pm
-  // More than 10% past original target — take the profit, regardless of other conditions
-  if (currentPrice > position.target * 1.10) return 'SELL_NOW';
+  // More than 10% past original target — take the profit, regardless of other conditions.
+  // Suspended while protected (Rule 3) — the trailing stop below governs instead.
+  if (!inProtection && currentPrice > position.target * 1.10) return 'SELL_NOW';
+  // Trailing stop (Rule 3): dropped 20%+ from peak while protected
+  if (inProtection && currentPrice <= position.peakPrice * 0.80) return 'SELL_NOW';
 
   // SELL SOON conditions
   // Note: target*1.05 (more than 5% past target) is already covered by the 0.97
   // threshold below — any price above 105% of target is also above 97% of it.
-  const toTarget = currentPrice >= position.target * 0.97;
-  if (toTarget) return 'SELL_SOON';
-  if (rsi >= 72) return 'SELL_SOON';
+  // Suspended while protected (Rule 3).
+  if (!inProtection) {
+    const toTarget = currentPrice >= position.target * 0.97;
+    if (toTarget) return 'SELL_SOON';
+  }
+  if (!inProtection && rsi >= 72) return 'SELL_SOON';
   if (position.duration === '3-DAY' && days >= 4) return 'SELL_SOON';
   if (position.duration === 'WEEK' && days >= 7) return 'SELL_SOON';
 
-  // Peak give-back (more than half of peak gain given back)
+  // Peak give-back (more than half of peak gain given back). Superseded by the
+  // Rule 3 trailing stop once Momentum Protection is active (per confirmed scope).
   const peakGain = position.peakPrice - position.buyPrice;
-  if (peakGain > 0) {
+  if (!inProtection && peakGain > 0) {
     const currentGain = currentPrice - position.buyPrice;
     if (currentGain < peakGain * 0.5) return 'SELL_SOON';
   }
+
+  // Trailing stop (Rule 3): dropped 15%+ from peak while protected
+  if (inProtection && currentPrice <= position.peakPrice * 0.85) return 'SELL_SOON';
 
   return 'HOLDING';
 }
@@ -3761,25 +3799,38 @@ function buildFridayFlag(p, currentPrice, pnlPct) {
 function getPortfolioTier(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
   const pt = getPT();
   const ptMin = pt.getHours() * 60 + pt.getMinutes();
+  // Momentum Protection (Rule 2): once a position has ever run 20%+ above purchase,
+  // RSI-based warnings are suspended for good — see momentumProtectionActivated in
+  // renderPortfolioTab. Stop-loss, -8% loss, and day-trade cutoff stay active regardless.
+  const inProtection = !!p.momentumProtectionActivated;
 
   // SELL NOW
   if (currentPrice <= p.stop) return 'SELL_NOW';
-  if (rsi > 78) return 'SELL_NOW';
+  if (!inProtection && rsi > 78) return 'SELL_NOW';
   if (pnlPct <= -8) return 'SELL_NOW';
   if (p.duration === 'DAY' && ptMin >= 720 && isTradingDay(pt)) return 'SELL_NOW';
-  // More than 10% past original target — take the profit, regardless of other conditions
-  if (currentPrice > p.target * 1.10) return 'SELL_NOW';
+  // More than 10% past original target — take the profit, regardless of other conditions.
+  // Suspended while protected (Rule 3) — the trailing stop below governs instead.
+  if (!inProtection && currentPrice > p.target * 1.10) return 'SELL_NOW';
+  // Trailing stop (Rule 3): dropped 20%+ from peak while protected
+  if (inProtection && currentPrice <= p.peakPrice * 0.80) return 'SELL_NOW';
 
   // DANGER — within 3% of stop-loss
   const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
   if (distToStop > 0 && distToStop <= 3) return 'DANGER';
 
-  // SELL SOON — more than 5% past original target, regardless of other conditions
-  if (currentPrice > p.target * 1.05) return 'SELL_SOON';
+  // SELL SOON — more than 5% past original target, regardless of other conditions.
+  // Suspended while protected (Rule 3).
+  if (!inProtection && currentPrice > p.target * 1.05) return 'SELL_SOON';
 
-  // SELL SOON — within 5% of target (approaching from below)
-  const distToTarget = ((p.target - currentPrice) / p.target) * 100;
-  if (distToTarget >= 0 && distToTarget <= 5) return 'SELL_SOON';
+  // SELL SOON — within 5% of target (approaching from below). Suspended while protected.
+  if (!inProtection) {
+    const distToTarget = ((p.target - currentPrice) / p.target) * 100;
+    if (distToTarget >= 0 && distToTarget <= 5) return 'SELL_SOON';
+  }
+
+  // Trailing stop (Rule 3): dropped 15%+ from peak while protected
+  if (inProtection && currentPrice <= p.peakPrice * 0.85) return 'SELL_SOON';
 
   // HOLD ON TRACK (profitable)
   if (pnlDollar >= 0) return 'HOLD_TRACK';
@@ -3792,16 +3843,23 @@ function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
   const tier = getPortfolioTier(p, currentPrice, rsi, pnlDollar, pnlPct, days);
   const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
   const distToTarget = ((p.target - currentPrice) / p.target) * 100;
+  // Must mirror getPortfolioTier's inProtection gating exactly, or this reason-text
+  // selection can misattribute a SELL_NOW to RSI when RSI is no longer what's driving it.
+  const inProtection = !!p.momentumProtectionActivated;
 
   if (tier === 'SELL_NOW') {
     if (currentPrice <= p.stop)
       return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Price hit stop-loss</div>`;
-    if (rsi > 78)
+    if (!inProtection && rsi > 78)
       return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — RSI ${rsi.toFixed(0)} — extremely overbought</div>`;
     if (pnlPct <= -8)
       return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Down 8%+ from purchase</div>`;
-    if (currentPrice > p.target * 1.10)
+    if (!inProtection && currentPrice > p.target * 1.10)
       return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — ${(-distToTarget).toFixed(1)}% past target $${p.target.toFixed(2)} — take the profit</div>`;
+    if (inProtection && currentPrice <= p.peakPrice * 0.80) {
+      const dropPct = ((p.peakPrice - currentPrice) / p.peakPrice) * 100;
+      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Dropped ${dropPct.toFixed(1)}% from peak $${p.peakPrice.toFixed(2)} — trailing stop hit</div>`;
+    }
     return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Day trade — exit before close</div>`;
   }
 
@@ -3809,7 +3867,11 @@ function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
     return `<div class="port-banner port-danger"><strong>⚠️ DANGER — NEAR STOP-LOSS</strong> — Stop-loss at $${p.stop.toFixed(2)} — price is ${distToStop.toFixed(1)}% away. Consider exiting.</div>`;
 
   if (tier === 'SELL_SOON') {
-    if (currentPrice > p.target)
+    if (inProtection && currentPrice <= p.peakPrice * 0.85) {
+      const dropPct = ((p.peakPrice - currentPrice) / p.peakPrice) * 100;
+      return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Dropped ${dropPct.toFixed(1)}% from peak $${p.peakPrice.toFixed(2)} — trailing stop</div>`;
+    }
+    if (!inProtection && currentPrice > p.target)
       return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — ${(-distToTarget).toFixed(1)}% past target $${p.target.toFixed(2)} — exceeded goal</div>`;
     return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Target $${p.target.toFixed(2)} — you are ${distToTarget.toFixed(1)}% away</div>`;
   }
@@ -3877,6 +3939,8 @@ function confirmMarkSold(posId) {
   const targetDriftPct = (pos.liveTarget != null && pos.target)
     ? ((pos.liveTarget - pos.target) / pos.target) * 100
     : null;
+  // Rule 5: did the position actually exit via the trailing stop threshold?
+  const trailingStopTriggered = !!pos.momentumProtectionActivated && salePrice <= pos.peakPrice * 0.85;
 
   const record = {
     id: Date.now().toString(),
@@ -3906,6 +3970,11 @@ function confirmMarkSold(posId) {
     priceRange: salePrice <= 3 ? '$1–$3' : salePrice <= 9 ? '$4–$9' : '$10–$20',
     sellWarningAtSale: currentWarn,
     targetDriftPct,
+    peakPrice: pos.peakPrice,
+    peakPriceDate: pos.peakPriceDate || null,
+    momentumProtectionActivated: !!pos.momentumProtectionActivated,
+    trailingStopTriggered,
+    rsiSuspendedAtGainPct: pos.rsiSuspendedAtGainPct ?? null,
   };
 
   state.sold.unshift(record);
@@ -4084,6 +4153,10 @@ function generateClaudeReport() {
     const tw = t.filter(s => s.pnlPct > 0);
     return `  ${label}: ${t.length} trades | ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}% win rate | avg outcome ${t.length?avg(t,s=>s.pnlPct).toFixed(1):'—'}%`;
   };
+
+  const momentumActivatedTrades = sold.filter(s => s.momentumProtectionActivated);
+  const momentumTrailingTrades  = sold.filter(s => s.trailingStopTriggered);
+  const momentumRsiEarlyTrades  = sold.filter(s => s.rsiSuspendedAtGainPct != null);
 
   let report = `EDGE TRADE SIGNALS — CLAUDE ANALYSIS REPORT
 Generated: ${dateStr}
@@ -4268,6 +4341,14 @@ ${macroCondStats('BROAD_RALLY',       'BROAD_RALLY:         ')}
 ${macroCondStats('MOMENTUM_DAY',      'MOMENTUM_DAY:        ')}
 ${macroSectorWeaknessStats(          'SECTOR_WEAKNESS_*:   ')}
 ${macroCondStats('CHOPPY',            'CHOPPY:              ')}
+
+=== MOMENTUM PROTECTION ===
+
+Trades where Momentum Protection activated:     ${momentumActivatedTrades.length}
+Avg outcome on those trades:                    ${momentumActivatedTrades.length ? avg(momentumActivatedTrades, s=>s.pnlPct).toFixed(1) : '—'}%
+Trades where trailing stop triggered exit:      ${momentumTrailingTrades.length} | avg outcome ${momentumTrailingTrades.length ? avg(momentumTrailingTrades, s=>s.pnlPct).toFixed(1) : '—'}%
+Trades where RSI would have triggered early:    ${momentumRsiEarlyTrades.length} | avg gain at that
+  point ${momentumRsiEarlyTrades.length ? avg(momentumRsiEarlyTrades, s=>s.rsiSuspendedAtGainPct).toFixed(1) : '—'}% (shows how much would have been left on the table)
 
 === FULL TRADE HISTORY ===
 
