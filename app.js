@@ -1,13 +1,21 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.4.0
+// EDGE Trade Signals — app.js  v1.5.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.4.0';
+const VERSION = 'v1.5.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
+// Sum of every signal's max points in scoreStock(): Volume spike 30 + Price
+// momentum 20 + RSI position 20 + Above 20-day MA 10 + Volume build 15 +
+// Mean reversion 20 + Consecutive up days 15 + Relative strength 15 = 145.
+// Used to normalize the raw signal score to a true 0-100 scale. Re-verify
+// this sum against scoreStock() if any signal's point value ever changes.
+// Does NOT include the Macro Market Overlay adjustment — that's applied
+// after normalization, on the already-0-100 score, not pooled into this max.
+const RAW_SCORE_MAX = 145;
 // VIX excluded — it's a CBOE index, not an equity, and is not obtainable through
 // Alpaca's /stocks endpoints on any tier. See Macro Market Overlay addendum.
 const MACRO_ETFS = ['SPY', 'XLE', 'XLK', 'XBI', 'XLF'];
@@ -2370,11 +2378,15 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0, category = n
 
   const volTrend = volBuild ? 'building' : volRatio >= 1.5 ? 'spike' : 'normal';
 
-  score = Math.max(0, Math.min(100, score));
+  // Normalize: raw score is a sum of independent per-signal points (see
+  // RAW_SCORE_MAX), not already on a 0-100 scale. score is provably in
+  // [0, RAW_SCORE_MAX] here — every branch above only ever adds a
+  // non-negative amount — so no lower clamp is needed before dividing.
+  score = Math.round((score / RAW_SCORE_MAX) * 100);
 
   // Macro Market Overlay (Step 3): category-specific adjustment applied on top
-  // of the base score above, which is otherwise untouched. Re-clamped 0-100
-  // per spec. macroCondition is null (adjustment 0) if macroContext hasn't
+  // of the normalized 0-100 score above, which is otherwise untouched. Re-clamped
+  // 0-100 per spec. macroCondition is null (adjustment 0) if macroContext hasn't
   // loaded yet or the fetch failed — never blocks scoring.
   const macroCondition = state.macroContext?.condition || null;
   const macroAdjustment = getMacroAdjustment(macroCondition, category);
@@ -2922,6 +2934,19 @@ function computeScoreBreakdown(s) {
     { key: 'vbuild', short: 'vol build', label: `Volume build (3 days rising)`,                                                 pts: volBuildPts, fired: volBuildPts > 0 },
     { key: 'rev',    short: 'reversal',  label: `Mean reversion`,                                                               pts: meanRevPts, fired: meanRevPts > 0 },
   ];
+
+  // Raw signal points above sum to at most RAW_SCORE_MAX (145), not 100 — score
+  // is normalized (see scoreStock). Add an explicit reconciliation row so every
+  // row's pts still sums to s.score instead of the breakdown silently not adding up.
+  const rawTotal = rows.reduce((sum, r) => sum + r.pts, 0);
+  const normalizedScore = Math.round((rawTotal / RAW_SCORE_MAX) * 100);
+  rows.push({
+    key: 'norm', short: 'normalized',
+    label: `Normalized: raw ${rawTotal}/${RAW_SCORE_MAX} → ${normalizedScore}/100`,
+    pts: normalizedScore - rawTotal,
+    fired: false,
+    neutral: normalizedScore === rawTotal,
+  });
 
   // Macro Market Overlay (Step 4) — only shown once macroContext has actually
   // loaded (s.macroCondition truthy); omitted entirely otherwise rather than
