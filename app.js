@@ -1,21 +1,24 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.5.0
+// EDGE Trade Signals — app.js  v1.6.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.5.0';
+const VERSION = 'v1.6.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
-// Sum of every signal's max points in scoreStock(): Volume spike 30 + Price
-// momentum 20 + RSI position 20 + Above 20-day MA 10 + Volume build 15 +
-// Mean reversion 20 + Consecutive up days 15 + Relative strength 15 = 145.
+// Sum of every signal's max POSITIVE points in scoreStock() — Scoring Formula v2
+// (Change 8/9): Volume spike 20 (was 30) + Price momentum 20 + RSI position 20 +
+// Above 20-day MA 10 + Volume build 15 + Mean reversion 20 + Consecutive up days 15 +
+// Relative strength 15 = 135. Deliberately excludes the new negative signals
+// (RSI 75+ = -10, Volume 3x+ = -10) — the denominator uses max positive points
+// only, per spec, so a score can never exceed 100 regardless of which penalties fire.
 // Used to normalize the raw signal score to a true 0-100 scale. Re-verify
 // this sum against scoreStock() if any signal's point value ever changes.
 // Does NOT include the Macro Market Overlay adjustment — that's applied
 // after normalization, on the already-0-100 score, not pooled into this max.
-const RAW_SCORE_MAX = 145;
+const RAW_SCORE_MAX = 135;
 // VIX excluded — it's a CBOE index, not an equity, and is not obtainable through
 // Alpaca's /stocks endpoints on any tier. See Macro Market Overlay addendum.
 const MACRO_ETFS = ['SPY', 'XLE', 'XLK', 'XBI', 'XLF'];
@@ -1615,6 +1618,20 @@ function isAfternoonMode() {
   return tMin >= 720; // 12:00pm Pacific
 }
 
+// Change 11 (Scoring Formula v2 addendum): DAY trade signals go stale fast —
+// after 10am Pacific there's too little of the trading day left for an
+// intraday target to be realistic. Window is 10am-5pm PT (covers OPEN+AH);
+// once the market is fully CLOSED the existing marketClosed overlay already
+// communicates that, and this window can never overlap CLOSED by construction
+// (600-1020 min falls entirely inside OPEN[390,780) + AH[780,1020)).
+function isDayTradeSuppressed(duration) {
+  if (duration !== 'DAY') return false;
+  const pt = getPT();
+  if (!isTradingDay(pt)) return false;
+  const tMin = pt.getHours() * 60 + pt.getMinutes();
+  return tMin >= 600 && tMin < 1020; // 10:00am-5:00pm Pacific
+}
+
 function isPreMarketHours() {
   const pt = getPT();
   const tMin = pt.getHours() * 60 + pt.getMinutes();
@@ -2302,17 +2319,25 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0, category = n
   const { entry, target, stop, cappedBy } = calcEntryTargetStop(price, trimmedAtr, duration, { high52, swingHigh10, ma20 });
 
   let score = 0;
-  // Volume spike (0–30)
-  if (volRatio >= 3) score += 30;
-  else if (volRatio >= 2) score += 20;
-  else if (volRatio >= 1.5) score += 10;
+  // Volume spike (−10 to +20) — Change 9 (Scoring Formula v2): flipped so 1-2x
+  // (75% win rate, best zone) scores highest; 3x+ (50% win rate, -4.7% avg,
+  // worst performer — late retail pile-in) is now penalized instead of rewarded.
+  if (volRatio >= 3) score -= 10;
+  else if (volRatio >= 2) score += 10;
+  else if (volRatio >= 1) score += 20;
+  else if (volRatio >= 0.5) score += 15;
+  // else (<0.5x): 0 pts — too quiet for a reliable liquidity signal
   // Price momentum (0–20)
   if (todayChange >= 4) score += 20;
   else if (todayChange >= 2) score += 10;
-  // RSI (0–20)
-  if (rsi >= 50 && rsi <= 65) score += 20;
-  else if (rsi > 65 && rsi <= 75) score += 10;
-  else if (rsi < 45 && closes.length >= 5 && closes[closes.length-1] > closes[closes.length-5]) score += 15;
+  // RSI (−10 to +20) — Change 8 (Scoring Formula v2): buckets re-derived from
+  // 28-trade analysis. RSI 65-75 no longer rewarded (0% win rate in data);
+  // RSI 75+ now penalized. Does not affect the separate Mean Reversion signal below.
+  if (rsi >= 55 && rsi <= 65) score += 20;
+  else if (rsi >= 35 && rsi < 55) score += 15;
+  else if (rsi < 35) score += 10;
+  else if (rsi > 65 && rsi <= 75) score += 0;
+  else if (rsi > 75) score -= 10;
   // Above 20-day MA
   if (price > ma20) score += 10;
 
@@ -2323,16 +2348,19 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0, category = n
     hasNegNews = NEG_KEYWORDS.some(kw => hl.includes(kw));
   }
 
-  // Volume Build: 3 consecutive days of rising volume + today >= 1.3x avg (0–15)
+  // Volume Build: 2 consecutive days of rising volume + today >= 1.3x avg (0–15)
+  // Change 10 (Scoring Formula v2): loosened from 3 to 2 consecutive days —
+  // near-miss data showed 2-day setups had a 100% win rate vs 67% for actual
+  // 3-day fires, suggesting the old threshold caught the setup one day late.
   let consRisingVolDays = 0;
   for (let i = vols.length - 1; i > 0; i--) {
     if (vols[i] > vols[i-1]) consRisingVolDays++;
     else break;
   }
   let volBuild = false;
-  if (vols.length >= 4 && volRatio >= 1.3) {
+  if (vols.length >= 2 && volRatio >= 1.3) {
     const n = vols.length;
-    if (vols[n-1] > vols[n-2] && vols[n-2] > vols[n-3]) {
+    if (vols[n-1] > vols[n-2]) {
       volBuild = true;
       score += 15;
     }
@@ -2379,9 +2407,11 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0, category = n
   const volTrend = volBuild ? 'building' : volRatio >= 1.5 ? 'spike' : 'normal';
 
   // Normalize: raw score is a sum of independent per-signal points (see
-  // RAW_SCORE_MAX), not already on a 0-100 scale. score is provably in
-  // [0, RAW_SCORE_MAX] here — every branch above only ever adds a
-  // non-negative amount — so no lower clamp is needed before dividing.
+  // RAW_SCORE_MAX), not already on a 0-100 scale. Since Scoring Formula v2,
+  // score can go negative (RSI 75+, Volume 3x+ penalties) if no positive
+  // signal offsets them — left unclamped here and allowed to normalize
+  // proportionally; the macro-adjustment step below floors the final
+  // result at 0, so nothing negative is ever actually displayed.
   score = Math.round((score / RAW_SCORE_MAX) * 100);
 
   // Macro Market Overlay (Step 3): category-specific adjustment applied on top
@@ -2786,6 +2816,13 @@ function renderStockCard(s, marketClosed) {
   const overlay      = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
   const ahStrip      = buildAHStrip(s.ticker);
   const actionBanner = buildSignalActionBanner(s);
+  // Change 11: not marketClosed by construction whenever this is true (see
+  // isDayTradeSuppressed comment), but guarded explicitly anyway so the two
+  // overlays can never both render even if that invariant ever changes.
+  const daySuppressed = !marketClosed && isDayTradeSuppressed(s.duration);
+  const daySuppressedOverlay = daySuppressed
+    ? `<div class="day-suppressed-overlay">⚠ Entry window closed — DAY trade signals expire at 10am</div>`
+    : '';
   const hasExtraBadges = s.volBuild || s.meanReversion || (s.consUpDays >= 3);
   const sigBadges = hasExtraBadges ? `
     <div class="signal-extra-badges">
@@ -2795,8 +2832,9 @@ function renderStockCard(s, marketClosed) {
     </div>` : '';
 
   return `
-    <div class="stock-card" onclick="openStockModal('${s.ticker}')">
+    <div class="stock-card${daySuppressed ? ' stock-card-suppressed' : ''}" onclick="openStockModal('${s.ticker}')">
       ${overlay}
+      ${daySuppressedOverlay}
       ${actionBanner}
       <div class="card-top">
         <div class="card-left">
@@ -2836,6 +2874,12 @@ function buildSignalActionBanner(s) {
   const ptMin = pt.getHours() * 60 + pt.getMinutes();
   const isDay = s.duration === 'DAY';
   const tradingDay = isTradingDay(pt);
+
+  // Change 11: once the 10am suppression overlay is active for a DAY trade,
+  // don't also show these older MISSED/WINDOW CLOSING banners underneath it —
+  // the grayed-out card + overlay already communicates "entry window closed,"
+  // and the new threshold (10am) is always reached before either of these.
+  if (isDay && isDayTradeSuppressed(s.duration)) return '';
 
   if (isDay && tradingDay && ptMin >= 720) {
     return `<div class="action-banner action-missed"><strong>MISSED — TOO LATE TODAY</strong></div>`;
@@ -2897,19 +2941,26 @@ function buildCardNewsSnippet(s) {
 }
 
 function computeScoreBreakdown(s) {
+  // Change 9 (Scoring Formula v2) — must mirror scoreStock()'s volume buckets exactly.
   let volPts = 0;
-  if (s.volRatio >= 3) volPts = 30;
-  else if (s.volRatio >= 2) volPts = 20;
-  else if (s.volRatio >= 1.5) volPts = 10;
+  let volNote = 'Too quiet — insufficient liquidity signal';
+  if (s.volRatio >= 3) { volPts = -10; volNote = 'Volume spike — late entry risk'; }
+  else if (s.volRatio >= 2) { volPts = 10; volNote = 'Elevated volume — moderate signal'; }
+  else if (s.volRatio >= 1) { volPts = 20; volNote = 'Healthy volume — best win-rate zone'; }
+  else if (s.volRatio >= 0.5) { volPts = 15; volNote = 'Quiet accumulation — strong historical performer'; }
 
   let momPts = 0;
   if (s.todayChange >= 4) momPts = 20;
   else if (s.todayChange >= 2) momPts = 10;
 
+  // Change 8 (Scoring Formula v2) — must mirror scoreStock()'s RSI buckets exactly.
   let rsiPts = 0;
-  if (s.rsi >= 50 && s.rsi <= 65) rsiPts = 20;
-  else if (s.rsi > 65 && s.rsi <= 75) rsiPts = 10;
-  else if (s.rsi < 45) rsiPts = 15;
+  let rsiNote = 'Overbought — caution';
+  if (s.rsi >= 55 && s.rsi <= 65) { rsiPts = 20; rsiNote = 'Sweet spot — historically best win rate'; }
+  else if (s.rsi >= 35 && s.rsi < 55) { rsiPts = 15; rsiNote = 'Neutral-bullish — solid performer'; }
+  else if (s.rsi < 35) { rsiPts = 10; rsiNote = 'Oversold — potential bounce setup'; }
+  else if (s.rsi > 65 && s.rsi <= 75) { rsiPts = 0; rsiNote = 'Elevated — no scoring bonus'; }
+  else if (s.rsi > 75) { rsiPts = -10; rsiNote = 'Overbought — caution'; }
 
   const maPts      = s.price > s.ma20 ? 10 : 0;
   const volBuildPts = s.volBuild ? 15 : 0;
@@ -2925,13 +2976,13 @@ function computeScoreBreakdown(s) {
   const rsSign  = rsVsSPY >= 0 ? '+' : '';
 
   const rows = [
-    { key: 'vol',    short: 'vol',       label: `Volume spike (${s.volRatio.toFixed(1)}× avg)`,                                 pts: volPts,     fired: volPts > 0 },
+    { key: 'vol',    short: 'vol',       label: `Volume (${s.volRatio.toFixed(1)}× avg) — ${volNote}`,                          pts: volPts,     fired: volPts > 0, neutral: volPts === 0 },
     { key: 'mom',    short: 'momentum',  label: `Price momentum (${s.todayChange>=0?'+':''}${s.todayChange.toFixed(1)}% today)`, pts: momPts,     fired: momPts > 0 },
-    { key: 'rsi',    short: 'RSI',       label: `RSI position (${s.rsi.toFixed(0)})`,                                           pts: rsiPts,     fired: rsiPts > 0 },
+    { key: 'rsi',    short: 'RSI',       label: `RSI position (${s.rsi.toFixed(0)}) — ${rsiNote}`,                              pts: rsiPts,     fired: rsiPts > 0, neutral: rsiPts === 0 },
     { key: 'ma',     short: 'MA',        label: `Above 20-day MA ($${s.ma20.toFixed(2)})`,                                      pts: maPts,      fired: maPts > 0 },
     { key: 'relstr', short: 'rel str',   label: `Relative strength (${rsSign}${rsVsSPY.toFixed(1)}% vs SPY ${spySign}${(s.spyChange||0).toFixed(1)}%)`, pts: relStrPts, fired: relStrPts > 0 },
     { key: 'consup', short: 'up days',   label: `Consecutive up days (${consUpDays} day${consUpDays !== 1 ? 's' : ''})`,        pts: consUpPts,  fired: consUpPts > 0 },
-    { key: 'vbuild', short: 'vol build', label: `Volume build (3 days rising)`,                                                 pts: volBuildPts, fired: volBuildPts > 0 },
+    { key: 'vbuild', short: 'vol build', label: `Volume build (2 days rising)`,                                                 pts: volBuildPts, fired: volBuildPts > 0 },
     { key: 'rev',    short: 'reversal',  label: `Mean reversion`,                                                               pts: meanRevPts, fired: meanRevPts > 0 },
   ];
 
@@ -3182,7 +3233,15 @@ async function openStockModal(ticker) {
     const upside = ((originalTarget - displayEntry) / displayEntry * 100).toFixed(1);
     const downside = ((displayStop - displayEntry) / displayEntry * 100).toFixed(1);
 
+    // Change 11: Portfolio-tab positions (ownedPos truthy) are unaffected —
+    // suppression only applies to Signals tab screener results.
+    const daySuppressed = !ownedPos && isDayTradeSuppressed(displayDuration);
+    const daySuppressedBanner = daySuppressed
+      ? `<div class="day-suppressed-overlay" style="margin-bottom:12px">⚠ DAY trade — entry window has closed for today</div>`
+      : '';
+
     document.getElementById('stock-modal-body').innerHTML = `
+      ${daySuppressedBanner}
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
         <span class="price-mono" style="font-size:20px">$${price.toFixed(2)}</span>
         <span class="${chgCls}">${chgSign}${Math.abs(stock.todayChange).toFixed(1)}%</span>
@@ -3299,6 +3358,9 @@ async function openStockModal(ticker) {
 
     document.getElementById('stock-modal-footer').innerHTML = ownedPos ? `
       <button class="btn btn-ghost" style="flex:1" disabled>✓ In Portfolio</button>
+      <button class="btn btn-ghost" onclick="closeModal()">✕</button>
+    ` : daySuppressed ? `
+      <button class="btn btn-ghost" style="flex:1" disabled title="Entry window closed for today">+ Add to Portfolio</button>
       <button class="btn btn-ghost" onclick="closeModal()">✕</button>
     ` : `
       <button class="btn btn-success" style="flex:1" onclick="openAddPortfolioModal('${ticker}')">+ Add to Portfolio</button>
@@ -4301,11 +4363,13 @@ Performance by signal score at purchase:
 
 VOL_BUILD near-misses (signal didn't fire, but close):
 ${(()=>{
-  const t2 = sold.filter(s=>s.volBuildNearMiss && s.volBuildNearMiss.consecutiveDays===2);
+  // Change 10 (Scoring Formula v2): near-miss threshold shifted from 2 to 1
+  // consecutive day, matching VOL_BUILD's firing threshold moving from 3 to 2 days.
+  const t2 = sold.filter(s=>s.volBuildNearMiss && s.volBuildNearMiss.consecutiveDays===1);
   const t2w = t2.filter(s=>s.pnlPct>0);
   const tr = sold.filter(s=>s.volBuildNearMiss && s.volBuildNearMiss.volRatio>=1.0 && s.volBuildNearMiss.volRatio<1.3);
   const trw = tr.filter(s=>s.pnlPct>0);
-  return `  Trades where consecutive days was 2 (needed 3): ${t2.length} | win rate ${t2.length?((t2w.length/t2.length*100).toFixed(0)):'—'}%
+  return `  Trades where consecutive days was 1 (needed 2): ${t2.length} | win rate ${t2.length?((t2w.length/t2.length*100).toFixed(0)):'—'}%
   Trades where vol ratio was 1.0–1.3x (needed 1.3x+): ${tr.length} | win rate ${tr.length?((trw.length/tr.length*100).toFixed(0)):'—'}%`;
 })()}
 
@@ -4406,15 +4470,20 @@ Trades where RSI would have triggered early:    ${momentumRsiEarlyTrades.length}
 
   report += `=== CURRENT SCORING FORMULA (for Claude's reference) ===
 
-Scoring System (0–100 points, capped at 100):
-  Volume spike:        0–30 pts (1.5x=10, 2x=20, 3x+=30)
-  Volume build:        0–15 pts (3 consecutive days rising + today >=1.3x avg)
+Scoring System — Scoring Formula v2 (raw signal points normalized to 0–100 via
+round(raw / ${RAW_SCORE_MAX} * 100), then clamped 0–100 after the Macro Market Overlay
+adjustment below is applied):
+  Volume spike:        −10 to +20 pts (<0.5x=0, 0.5-1x=15, 1-2x=20 best zone, 2-3x=10, 3x+=−10)
+  Volume build:        0–15 pts (2 consecutive days rising + today >=1.3x avg)
   Price momentum:      0–20 pts (2-4%=10, 4%+=20)
-  RSI position:        0–20 pts (50-65=20, 65-75=10, <45 rising=15)
+  RSI position:        −10 to +20 pts (<35=10, 35-55=15, 55-65=20 best zone, 65-75=0, 75+=−10)
   Above 20-day MA:     10 pts
   Relative strength:   0–15 pts (outperform SPY by >0%=5, >1%=10, >2%=15)
   Consecutive up days: 0–15 pts (2 days=5, 3 days=10, 4+ days=15)
   Mean reversion:      0–20 pts (price 8-15% below MA, RSI<45, RSI turning up)
+
+RAW_SCORE_MAX (${RAW_SCORE_MAX}) is the sum of max POSITIVE points only, so a score
+can never exceed 100 regardless of which negative signals fire.
 
 Labels: 80–100=STRONG BUY | 50–79=SOFT BUY | 20–49=WATCH | <20=excluded
 

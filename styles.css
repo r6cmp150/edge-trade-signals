@@ -377,6 +377,20 @@ a { color: var(--blue); }
   overflow: hidden;
 }
 .stock-card:active { border-color: var(--blue); }
+/* ── Change 11: DAY Trade Suppression ── */
+.stock-card-suppressed { opacity: 0.5; }
+.day-suppressed-overlay {
+  background: rgba(255,209,102,0.15);
+  border: 1px solid rgba(255,209,102,0.4);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  font-family: var(--cond);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--yellow);
+  text-align: center;
+}
 .closed-overlay {
   position: absolute;
   inset: 0;
