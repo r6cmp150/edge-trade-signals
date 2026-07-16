@@ -21,7 +21,7 @@ const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const RAW_SCORE_MAX = 135;
 // VIX excluded — it's a CBOE index, not an equity, and is not obtainable through
 // Alpaca's /stocks endpoints on any tier. See Macro Market Overlay addendum.
-const MACRO_ETFS = ['SPY', 'XLE', 'XLK', 'XBI', 'XLF', 'XLI', 'XLRE'];
+const MACRO_ETFS = ['SPY', 'XLE', 'XLK', 'XBI', 'XLF', 'XLI', 'XLRE', 'XLY'];
 // FINANCIAL universe tickers using a hyphen suffix (SPAC units, one dual-class
 // stock) whose Alpaca resolution is unverified — 7 are "-U" SPAC unit tickers
 // Alpaca likely doesn't list as separate tradable assets, and CRD-A is a
@@ -477,6 +477,31 @@ const STOCK_UNIVERSES = {
   'RENX','RFL','RITM','RLJ','RMAX','RWT','SACH','SAFE','SBRA','SDHC',
   'SEVN','SHO','SITC','SKYH','SRG','STWD','SUNS','SVC','TRTX','TWO',
   'UMH','UNIT','WHLR','WSR',
+  ])],
+  // LIST 4f: CONSUMER — Consumer Cyclical sector per Finviz classification.
+  //   Broader than pure retail: specialty/apparel/internet retail and
+  //   department stores, plus autos & auto parts, restaurants, leisure/
+  //   gambling/casinos, travel services, and packaging. Overlaps heavily
+  //   with the still-unverified interim RETAIL list (61 shared tickers as
+  //   of this addition) — RETAIL is due its own Finviz-verified cleanup
+  //   pass, at which point this overlap should be resolved there.
+  CONSUMER: [...new Set([
+  'ACEL','ACVA','AEO','AOUT','ARHS','ARKO','ATER','AUR','BALY','BARK',
+  'BBBY','BIRD','BLMN','BNED','BOBS','BRCB','BRLT','BTBD','CAL','CALY',
+  'CATO','CHPT','CLAR','CNNE','CNTY','CPNG','CRMT','CURV','CVGI','CWH',
+  'DBGI','DBI','DCH','DFH','DLTH','DRVN','DSS','DXLG','EFOI','EMPD',
+  'EVGO','F','FABC','FFAI','FGI','FIGS','FLL','FLWS','FLYE','FMFC',
+  'FNKO','FOSL','FOXF','FRTT','FUN','FWDI','FWRG','GBTG','GPK','GRWG',
+  'GT','GTEC','HLLY','HOFT','HOUR','HWH','INSE','IPW','JACK','JBDI',
+  'JEM','JILL','JRSH','KSS','LAKE','LCID','LCUT','LE','LEG','LESL',
+  'LOCO','LOVE','LUCK','LVWR','MAMO','MAT','MBC','MED','MNRO','MPAA',
+  'MRDN','MVST','MWYN','NCLH','NEGG','NTRP','NVVE','NWTG','OI','OLPX',
+  'ONEW','ORBS','PACK','PASW','PLBY','PLCE','PRPL','PTLO','PTON','PUSA',
+  'QS','RAVE','RDNW','REAL','REE','RENT','RIVN','ROLR','RRGB','SBH',
+  'SEGG','SES','SEV','SFIX','SG','SHOE','SLDP','SPWH','SRI','SVV',
+  'SYPR','TDUP','TLYS','TRIP','TRNR','TRON','TRUG','UA','UAA','UFI',
+  'VENU','VFC','VIRC','VNCE','VRA','VSTD','WEN','WKHS','WKSP','WOOF',
+  'WWW','XELB','XMAX','XPOF','ZUMZ',
   ])],
   BROAD: [...new Set([
         // LIST 5: BROAD MARKET
@@ -1387,19 +1412,19 @@ async function resolveMacroConditionWithGroq(changes) {
 // is threaded into scoreStock() — see "How category is stored" note at the Macro
 // Overlay call site. RETAIL currently mirrors TECH's values as a placeholder
 // until its universe is verified and its own macro sensitivity is characterized.
-// FINANCIAL, INDUSTRIAL, and REAL_ESTATE start at 0 for every condition (no
-// adjustment) since they're mixed/uncharacterized buckets with no dedicated
-// SECTOR_WEAKNESS_* condition of their own yet.
+// FINANCIAL, INDUSTRIAL, REAL_ESTATE, and CONSUMER start at 0 for every
+// condition (no adjustment) since they're mixed/uncharacterized buckets with
+// no dedicated SECTOR_WEAKNESS_* condition of their own yet.
 const MACRO_ADJUSTMENTS = {
-  RISK_OFF:                { HEALTHCARE: -20, ENERGY: -15, TECH: -20, RETAIL: -20, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD: -20 },
-  GEOPOLITICAL:            { HEALTHCARE: -10, ENERGY:  10, TECH: -15, RETAIL: -15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD: -10 },
-  TECH_ROTATION_OUT:       { HEALTHCARE:  -5, ENERGY:  10, TECH: -20, RETAIL: -20, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD:  -5 },
-  BROAD_RALLY:             { HEALTHCARE:  10, ENERGY:   5, TECH:  10, RETAIL:  10, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD:  10 },
-  MOMENTUM_DAY:            { HEALTHCARE:   5, ENERGY:   0, TECH:  15, RETAIL:  15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD:   5 },
-  SECTOR_WEAKNESS_BIOTECH: { HEALTHCARE: -15, ENERGY:   0, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD:  -5 },
-  SECTOR_WEAKNESS_ENERGY:  { HEALTHCARE:   0, ENERGY: -15, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD:  -5 },
-  SECTOR_WEAKNESS_TECH:    { HEALTHCARE:   0, ENERGY:   0, TECH: -15, RETAIL: -15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD:  -5 },
-  CHOPPY:                  { HEALTHCARE:   0, ENERGY:   0, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, BROAD:   0 },
+  RISK_OFF:                { HEALTHCARE: -20, ENERGY: -15, TECH: -20, RETAIL: -20, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD: -20 },
+  GEOPOLITICAL:            { HEALTHCARE: -10, ENERGY:  10, TECH: -15, RETAIL: -15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD: -10 },
+  TECH_ROTATION_OUT:       { HEALTHCARE:  -5, ENERGY:  10, TECH: -20, RETAIL: -20, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  -5 },
+  BROAD_RALLY:             { HEALTHCARE:  10, ENERGY:   5, TECH:  10, RETAIL:  10, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  10 },
+  MOMENTUM_DAY:            { HEALTHCARE:   5, ENERGY:   0, TECH:  15, RETAIL:  15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:   5 },
+  SECTOR_WEAKNESS_BIOTECH: { HEALTHCARE: -15, ENERGY:   0, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  -5 },
+  SECTOR_WEAKNESS_ENERGY:  { HEALTHCARE:   0, ENERGY: -15, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  -5 },
+  SECTOR_WEAKNESS_TECH:    { HEALTHCARE:   0, ENERGY:   0, TECH: -15, RETAIL: -15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  -5 },
+  CHOPPY:                  { HEALTHCARE:   0, ENERGY:   0, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:   0 },
 };
 
 function getMacroAdjustment(condition, category) {
@@ -1484,12 +1509,16 @@ async function groqAnalyze(ticker, prompt) {
 // today" line in buildAIPrompt(). BROAD has no single relevant sector (SPY
 // already covers it), so it's intentionally absent — callers must handle null.
 function getSectorETFForCategory(category) {
-  // RETAIL: XLY is a placeholder pending a verified Retail-sector ETF choice.
+  // RETAIL: XLY is a placeholder pending a verified Retail-sector ETF choice —
+  // it happens to now be fetched anyway since CONSUMER added XLY to MACRO_ETFS
+  // for real, but RETAIL's mapping itself is still unconfirmed.
   // FINANCIAL: XLF is already one of the macro overlay ETFs (MACRO_ETFS), so
   // this mapping is consistent with the rest of the macro system by construction.
   // INDUSTRIAL: XLI was added to MACRO_ETFS specifically to back this mapping.
   // REAL_ESTATE: XLRE was added to MACRO_ETFS specifically to back this mapping.
-  return { HEALTHCARE: 'XBI', ENERGY: 'XLE', TECH: 'XLK', RETAIL: 'XLY', FINANCIAL: 'XLF', INDUSTRIAL: 'XLI', REAL_ESTATE: 'XLRE' }[category] || null;
+  // CONSUMER: XLY was added to MACRO_ETFS specifically to back this mapping —
+  // this is the genuine, correct classification (Consumer Discretionary SPDR).
+  return { HEALTHCARE: 'XBI', ENERGY: 'XLE', TECH: 'XLK', RETAIL: 'XLY', FINANCIAL: 'XLF', INDUSTRIAL: 'XLI', REAL_ESTATE: 'XLRE', CONSUMER: 'XLY' }[category] || null;
 }
 
 // Unified Groq prompt for both owned and unowned stocks — replaces the old
@@ -2125,7 +2154,7 @@ function renderFilterButtons() {
   const df = state.filters.duration;
   const t  = state.signalToggles;
   const u  = state.selectedUniverse || 'BROAD';
-  const universes = ['HEALTHCARE','ENERGY','TECH','RETAIL','FINANCIAL','INDUSTRIAL','REAL_ESTATE','BROAD'];
+  const universes = ['HEALTHCARE','ENERGY','TECH','RETAIL','FINANCIAL','INDUSTRIAL','REAL_ESTATE','CONSUMER','BROAD'];
   return `
     <div class="filter-label">Universe</div>
     <div class="filter-row universe-row">
@@ -4063,7 +4092,7 @@ function renderSettingsTab() {
       <div class="settings-row">
         <div>
           <div class="settings-label">Universe Sizes</div>
-          <div class="settings-hint">HEALTHCARE ${STOCK_UNIVERSES.HEALTHCARE.length} · ENERGY ${STOCK_UNIVERSES.ENERGY.length} · TECH ${STOCK_UNIVERSES.TECH.length} · RETAIL ${STOCK_UNIVERSES.RETAIL.length} · FINANCIAL ${STOCK_UNIVERSES.FINANCIAL.length} · INDUSTRIAL ${STOCK_UNIVERSES.INDUSTRIAL.length} · REAL_ESTATE ${STOCK_UNIVERSES.REAL_ESTATE.length} · BROAD ${STOCK_UNIVERSES.BROAD.length}</div>
+          <div class="settings-hint">HEALTHCARE ${STOCK_UNIVERSES.HEALTHCARE.length} · ENERGY ${STOCK_UNIVERSES.ENERGY.length} · TECH ${STOCK_UNIVERSES.TECH.length} · RETAIL ${STOCK_UNIVERSES.RETAIL.length} · FINANCIAL ${STOCK_UNIVERSES.FINANCIAL.length} · INDUSTRIAL ${STOCK_UNIVERSES.INDUSTRIAL.length} · REAL_ESTATE ${STOCK_UNIVERSES.REAL_ESTATE.length} · CONSUMER ${STOCK_UNIVERSES.CONSUMER.length} · BROAD ${STOCK_UNIVERSES.BROAD.length}</div>
         </div>
       </div>
       <div class="settings-row">
