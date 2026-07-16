@@ -21,7 +21,7 @@ const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const RAW_SCORE_MAX = 135;
 // VIX excluded — it's a CBOE index, not an equity, and is not obtainable through
 // Alpaca's /stocks endpoints on any tier. See Macro Market Overlay addendum.
-const MACRO_ETFS = ['SPY', 'XLE', 'XLK', 'XBI', 'XLF', 'XLI', 'XLRE', 'XLY'];
+const MACRO_ETFS = ['SPY', 'XLE', 'XLK', 'XBI', 'XLF', 'XLI', 'XLRE', 'XLY', 'XLB', 'XLC', 'XLU', 'XLP'];
 // FINANCIAL universe tickers using a hyphen suffix (SPAC units, one dual-class
 // stock) whose Alpaca resolution is unverified — 7 are "-U" SPAC unit tickers
 // Alpaca likely doesn't list as separate tradable assets, and CRD-A is a
@@ -503,8 +503,68 @@ const STOCK_UNIVERSES = {
   'VENU','VFC','VIRC','VNCE','VRA','VSTD','WEN','WKHS','WKSP','WOOF',
   'WWW','XELB','XMAX','XPOF','ZUMZ',
   ])],
-  BROAD: [...new Set([
-        // LIST 5: BROAD MARKET
+  // LIST 4g: BASIC_MATERIALS — Basic Materials sector per Finviz
+  //   classification (mining, chemicals, agricultural inputs, building
+  //   materials, paper/forest products, steel/aluminum).
+  BASIC_MATERIALS: [...new Set([
+  'ACNT','ALM','ALOY','ALTO','AMTX','AREC','ASPI','AVD','CAPS','CC',
+  'CDE','CLF','CLW','CNL','CTGO','DC','ECVT','ELE','EMAT','FEAM',
+  'FF','FMC','GEVO','GORO','GPRE','GRML','HDSN','HL','HUN','HYMC',
+  'IAUX','IE','KRO','LODE','LWLG','LXU','MATV','METC','MNTK','MTUS',
+  'NB','NG','NVA','OMEX','ORGN','PPTA','PZG','REA','RYAM','SBMT',
+  'SNES','SSMR','SXC','TROX','UAMY','USAR','USAU','VGZ','VOXR','WWR',
+  'XPL',
+  ])],
+  // LIST 4h: COMMUNICATION — Communication Services sector per Finviz
+  //   classification (broadcasting, publishing, telecom, internet
+  //   content/social, entertainment).
+  COMMUNICATION: [...new Set([
+  'AMC','AMCX','ANGI','ANGX','AREN','BMBL','BODI','BZFD','CARS','CAST',
+  'CCO','CCOI','CDLX','CNVS','CURI','CXDO','DIBS','DJT','DRCT','DV',
+  'EDHL','EDUC','EEX','EVC','FIRY','FLNT','FLZH','FUBO','GAIA','GAME',
+  'GDC','GETY','GIFT','GOGO','GTN','GXAI','HODO','IHRT','IQST','IZEA',
+  'KORE','KUST','KVHI','LEE','LILA','LILAK','LUMN','LVO','MAX','MDIA',
+  'MSGM','MYPS','NCMI','NMAX','NRDS','NXDR','ONFO','OPTU','PLAY','PODC',
+  'PSKY','QNST','RSVR','RUM','SBGI','SEAT','SHEN','SLE','SNAL','SNAP',
+  'SSP','SSTK','STGW','STUB','SURG','SWAG','TBLA','TDAY','TEAD','TOON',
+  'TSQ','TTD','TZOO','UONE','UPWK','UPXI','WBTN','XHLD','ZDGE','ZIP',
+  'ZNB',
+  ])],
+  // LIST 4i: UTILITIES — Utilities sector per Finviz classification
+  //   (electric, gas, water, renewable/independent power producers).
+  UTILITIES: [...new Set([
+  'AES','AGIG','BESS','CDZI','DGXX','FLNC','GNE','GWRS','HE','HNRG',
+  'IMSR','NRGV','NXXT','OPAL','PCG','PCYO','SAFX','SPH','STEM','XIFR',
+  ])],
+  // LIST 4j: CONSUMER_PRODUCTS — Consumer Defensive sector per Finviz
+  //   classification (groceries, packaged foods, household/personal
+  //   products, education services, tobacco, beverages) — staple/
+  //   non-cyclical consumer goods, distinct from CONSUMER (Consumer
+  //   Cyclical). NOTE: despite an earlier working-file name of
+  //   "Defence.csv", this is Consumer Defensive, not military/defense.
+  //   RKDA (Arcadia Biosciences) and XXII (22nd Century Group) were
+  //   flagged as possible HEALTHCARE duplicates but aren't actually in
+  //   HEALTHCARE's verified list; XXII sits in the still-unverified
+  //   interim RETAIL list pending its own cleanup pass.
+  CONSUMER_PRODUCTS: [...new Set([
+  'ACI','AMBO','AMSS','AVO','BGS','BOF','BRBR','BRCC','BYND','CAG',
+  'CHGG','COTY','COUR','DDC','DNUT','EDBL','EEIQ','ENHA','FLO','GNLN',
+  'GO','GROV','HAIN','HCWC','HFFG','HLF','HNST','ISPR','JVA','KIDZ',
+  'KLC','KVUE','LFVN','LGCY','LMNR','LOCL','LSF','MAGN','MAMA','MGPI',
+  'MH','MSS','MYND','NUS','NWL','OFRM','PAVS','RKDA','RMCF','SBEV',
+  'SDOT','SKIL','SKIN','SLSN','SMPL','SOWG','SRXH','SUJA','UTZ','VFF',
+  'VHUB','VITL','WALD','WEST','XXII','YHC','ZVIA',
+  ])],
+  // OTHER (formerly BROAD) — everything not yet sorted into a Finviz-verified
+  //   sector universe. This was the app's original unverified catch-all and
+  //   still doubles as MASTER_TICKERS, the fallback list used whenever
+  //   state.selectedUniverse doesn't resolve to a valid universe (first load,
+  //   or a stale localStorage value from before a universe was renamed/split).
+  //   Retired from being the default/primary selectable universe; renamed to
+  //   be honest about what it actually is now that sector-specific universes
+  //   exist. Do not delete without replacing MASTER_TICKERS's fallback role.
+  OTHER: [...new Set([
+        // LIST 5: BROAD MARKET (legacy name, kept for history)
         'AAMC','AAU','AB','ABB','ABCB','ABG','ABIO','ABM','ABNB','AC',
         'ACA','ACCO','ACGL','ACHC','ACIW','ACM','ACNB','ACNT','ACRE','ACRO',
         'ACT','ACU','ACVA','ADBR','ADC','ADCT','ADEA','ADIL','ADMA','ADPT',
@@ -857,7 +917,7 @@ const STOCK_UNIVERSES = {
         'TBZU','TBZV','TBZW','TBZX','TBZY','TBZZ',
         ])]
 };
-const MASTER_TICKERS = STOCK_UNIVERSES.BROAD;
+const MASTER_TICKERS = STOCK_UNIVERSES.OTHER;
 let TICKERS = MASTER_TICKERS;
 
 const COMPANY_NAMES = {
@@ -925,7 +985,7 @@ let state = {
   loading: false,
   _confirmCb: null,
   lastPassedCount: 0,
-  selectedUniverse: 'BROAD',
+  selectedUniverse: 'OTHER',
   notifications: {},     // push notification state — persisted
 };
 
@@ -946,7 +1006,7 @@ function loadState() {
     { strongBuy: true, softBuy: true, watch: true },
     state.signalToggles
   );
-  if (!state.selectedUniverse) state.selectedUniverse = 'BROAD';
+  if (!state.selectedUniverse) state.selectedUniverse = 'OTHER';
   const baseList = STOCK_UNIVERSES[state.selectedUniverse] || MASTER_TICKERS;
   TICKERS = baseList.length ? baseList : MASTER_TICKERS;
 }
@@ -1408,23 +1468,27 @@ async function resolveMacroConditionWithGroq(changes) {
 }
 
 // Step 3: category-specific score adjustments. Keys match state.selectedUniverse
-// (HEALTHCARE/ENERGY/TECH/RETAIL/FINANCIAL/BROAD), which is also how category
-// is threaded into scoreStock() — see "How category is stored" note at the Macro
-// Overlay call site. RETAIL currently mirrors TECH's values as a placeholder
-// until its universe is verified and its own macro sensitivity is characterized.
-// FINANCIAL, INDUSTRIAL, REAL_ESTATE, and CONSUMER start at 0 for every
-// condition (no adjustment) since they're mixed/uncharacterized buckets with
-// no dedicated SECTOR_WEAKNESS_* condition of their own yet.
+// (HEALTHCARE/ENERGY/TECH/RETAIL/FINANCIAL/INDUSTRIAL/REAL_ESTATE/CONSUMER/
+// BASIC_MATERIALS/COMMUNICATION/UTILITIES/CONSUMER_PRODUCTS/OTHER), which is
+// also how category is threaded into scoreStock() — see "How category is
+// stored" note at the Macro Overlay call site. RETAIL currently mirrors TECH's
+// values as a placeholder until its universe is verified and its own macro
+// sensitivity is characterized. FINANCIAL, INDUSTRIAL, REAL_ESTATE, CONSUMER,
+// BASIC_MATERIALS, COMMUNICATION, UTILITIES, and CONSUMER_PRODUCTS all start
+// at 0 for every condition (no adjustment) since they're mixed/uncharacterized
+// buckets with no dedicated SECTOR_WEAKNESS_* condition of their own yet.
+// OTHER (formerly BROAD) keeps its original real values — it's the catch-all
+// fallback, not a placeholder-zeroed new addition.
 const MACRO_ADJUSTMENTS = {
-  RISK_OFF:                { HEALTHCARE: -20, ENERGY: -15, TECH: -20, RETAIL: -20, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD: -20 },
-  GEOPOLITICAL:            { HEALTHCARE: -10, ENERGY:  10, TECH: -15, RETAIL: -15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD: -10 },
-  TECH_ROTATION_OUT:       { HEALTHCARE:  -5, ENERGY:  10, TECH: -20, RETAIL: -20, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  -5 },
-  BROAD_RALLY:             { HEALTHCARE:  10, ENERGY:   5, TECH:  10, RETAIL:  10, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  10 },
-  MOMENTUM_DAY:            { HEALTHCARE:   5, ENERGY:   0, TECH:  15, RETAIL:  15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:   5 },
-  SECTOR_WEAKNESS_BIOTECH: { HEALTHCARE: -15, ENERGY:   0, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  -5 },
-  SECTOR_WEAKNESS_ENERGY:  { HEALTHCARE:   0, ENERGY: -15, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  -5 },
-  SECTOR_WEAKNESS_TECH:    { HEALTHCARE:   0, ENERGY:   0, TECH: -15, RETAIL: -15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:  -5 },
-  CHOPPY:                  { HEALTHCARE:   0, ENERGY:   0, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BROAD:   0 },
+  RISK_OFF:                { HEALTHCARE: -20, ENERGY: -15, TECH: -20, RETAIL: -20, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER: -20 },
+  GEOPOLITICAL:            { HEALTHCARE: -10, ENERGY:  10, TECH: -15, RETAIL: -15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER: -10 },
+  TECH_ROTATION_OUT:       { HEALTHCARE:  -5, ENERGY:  10, TECH: -20, RETAIL: -20, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER:  -5 },
+  BROAD_RALLY:             { HEALTHCARE:  10, ENERGY:   5, TECH:  10, RETAIL:  10, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER:  10 },
+  MOMENTUM_DAY:            { HEALTHCARE:   5, ENERGY:   0, TECH:  15, RETAIL:  15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER:   5 },
+  SECTOR_WEAKNESS_BIOTECH: { HEALTHCARE: -15, ENERGY:   0, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER:  -5 },
+  SECTOR_WEAKNESS_ENERGY:  { HEALTHCARE:   0, ENERGY: -15, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER:  -5 },
+  SECTOR_WEAKNESS_TECH:    { HEALTHCARE:   0, ENERGY:   0, TECH: -15, RETAIL: -15, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER:  -5 },
+  CHOPPY:                  { HEALTHCARE:   0, ENERGY:   0, TECH:   0, RETAIL:   0, FINANCIAL: 0, INDUSTRIAL: 0, REAL_ESTATE: 0, CONSUMER: 0, BASIC_MATERIALS: 0, COMMUNICATION: 0, UTILITIES: 0, CONSUMER_PRODUCTS: 0, OTHER:   0 },
 };
 
 function getMacroAdjustment(condition, category) {
@@ -1506,7 +1570,7 @@ async function groqAnalyze(ticker, prompt) {
 }
 
 // Category -> most relevant single sector ETF for the "Relevant sector ETF
-// today" line in buildAIPrompt(). BROAD has no single relevant sector (SPY
+// today" line in buildAIPrompt(). OTHER has no single relevant sector (SPY
 // already covers it), so it's intentionally absent — callers must handle null.
 function getSectorETFForCategory(category) {
   // RETAIL: XLY is a placeholder pending a verified Retail-sector ETF choice —
@@ -1518,7 +1582,9 @@ function getSectorETFForCategory(category) {
   // REAL_ESTATE: XLRE was added to MACRO_ETFS specifically to back this mapping.
   // CONSUMER: XLY was added to MACRO_ETFS specifically to back this mapping —
   // this is the genuine, correct classification (Consumer Discretionary SPDR).
-  return { HEALTHCARE: 'XBI', ENERGY: 'XLE', TECH: 'XLK', RETAIL: 'XLY', FINANCIAL: 'XLF', INDUSTRIAL: 'XLI', REAL_ESTATE: 'XLRE', CONSUMER: 'XLY' }[category] || null;
+  // BASIC_MATERIALS/COMMUNICATION/UTILITIES/CONSUMER_PRODUCTS: XLB/XLC/XLU/XLP
+  // were all added to MACRO_ETFS specifically to back these mappings.
+  return { HEALTHCARE: 'XBI', ENERGY: 'XLE', TECH: 'XLK', RETAIL: 'XLY', FINANCIAL: 'XLF', INDUSTRIAL: 'XLI', REAL_ESTATE: 'XLRE', CONSUMER: 'XLY', BASIC_MATERIALS: 'XLB', COMMUNICATION: 'XLC', UTILITIES: 'XLU', CONSUMER_PRODUCTS: 'XLP' }[category] || null;
 }
 
 // Unified Groq prompt for both owned and unowned stocks — replaces the old
@@ -1555,7 +1621,7 @@ Price vs MA: ${aboveBelow}
     const ctx = state.macroContext;
     const explanation = ctx.explanation || MACRO_INTERPRETATIONS[ctx.condition] || '';
     const spyPct = ctx.changes?.SPY;
-    const category = stock.category || state.selectedUniverse || 'BROAD';
+    const category = stock.category || state.selectedUniverse || 'OTHER';
     const sectorETF = getSectorETFForCategory(category);
     const sectorPct = sectorETF ? ctx.changes?.[sectorETF] : null;
 
@@ -1994,7 +2060,7 @@ async function runScreener() {
     }
 
     // 7. Score
-    const category = state.selectedUniverse || 'BROAD';
+    const category = state.selectedUniverse || 'OTHER';
     const scored = candidates.map(([ticker, snap]) => {
       const bars = allBars[ticker] || [];
       return scoreStock(ticker, snap, bars, newsMap[ticker] || null, spyChangePct, category);
@@ -2119,7 +2185,7 @@ function renderSignalsTab() {
     const sfb = unowned.filter(s => s.signal === 'SOFT BUY').length;
     const w   = unowned.filter(s => s.signal === 'WATCH').length;
     const total = TICKERS.length;
-    const universe = state.selectedUniverse || 'BROAD';
+    const universe = state.selectedUniverse || 'OTHER';
     html += `<div class="scan-summary">Scanned ${total} stocks <span class="ss-universe">[${universe}]</span> — <span class="ss-strong">${sb} strong buy</span>, <span class="ss-soft">${sfb} soft buy</span>, <span class="ss-watch">${w} watch</span></div>`;
 
     const filtered = getFilteredSignals();
@@ -2153,8 +2219,8 @@ function renderFilterButtons() {
   const pf = state.filters.priceRange;
   const df = state.filters.duration;
   const t  = state.signalToggles;
-  const u  = state.selectedUniverse || 'BROAD';
-  const universes = ['HEALTHCARE','ENERGY','TECH','RETAIL','FINANCIAL','INDUSTRIAL','REAL_ESTATE','CONSUMER','BROAD'];
+  const u  = state.selectedUniverse || 'OTHER';
+  const universes = ['HEALTHCARE','ENERGY','TECH','RETAIL','FINANCIAL','INDUSTRIAL','REAL_ESTATE','CONSUMER','BASIC_MATERIALS','COMMUNICATION','UTILITIES','CONSUMER_PRODUCTS','OTHER'];
   return `
     <div class="filter-label">Universe</div>
     <div class="filter-row universe-row">
@@ -4092,7 +4158,7 @@ function renderSettingsTab() {
       <div class="settings-row">
         <div>
           <div class="settings-label">Universe Sizes</div>
-          <div class="settings-hint">HEALTHCARE ${STOCK_UNIVERSES.HEALTHCARE.length} · ENERGY ${STOCK_UNIVERSES.ENERGY.length} · TECH ${STOCK_UNIVERSES.TECH.length} · RETAIL ${STOCK_UNIVERSES.RETAIL.length} · FINANCIAL ${STOCK_UNIVERSES.FINANCIAL.length} · INDUSTRIAL ${STOCK_UNIVERSES.INDUSTRIAL.length} · REAL_ESTATE ${STOCK_UNIVERSES.REAL_ESTATE.length} · CONSUMER ${STOCK_UNIVERSES.CONSUMER.length} · BROAD ${STOCK_UNIVERSES.BROAD.length}</div>
+          <div class="settings-hint">HEALTHCARE ${STOCK_UNIVERSES.HEALTHCARE.length} · ENERGY ${STOCK_UNIVERSES.ENERGY.length} · TECH ${STOCK_UNIVERSES.TECH.length} · RETAIL ${STOCK_UNIVERSES.RETAIL.length} · FINANCIAL ${STOCK_UNIVERSES.FINANCIAL.length} · INDUSTRIAL ${STOCK_UNIVERSES.INDUSTRIAL.length} · REAL_ESTATE ${STOCK_UNIVERSES.REAL_ESTATE.length} · CONSUMER ${STOCK_UNIVERSES.CONSUMER.length} · BASIC_MATERIALS ${STOCK_UNIVERSES.BASIC_MATERIALS.length} · COMMUNICATION ${STOCK_UNIVERSES.COMMUNICATION.length} · UTILITIES ${STOCK_UNIVERSES.UTILITIES.length} · CONSUMER_PRODUCTS ${STOCK_UNIVERSES.CONSUMER_PRODUCTS.length} · OTHER ${STOCK_UNIVERSES.OTHER.length}</div>
         </div>
       </div>
       <div class="settings-row">
