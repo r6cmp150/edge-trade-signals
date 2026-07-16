@@ -2058,69 +2058,91 @@ async function groqAnalyze(ticker, prompt) {
   return result;
 }
 
-const PORTFOLIO_TIER_LABELS = {
-  SELL_NOW: 'SELL NOW',
-  DANGER: 'DANGER — NEAR STOP-LOSS',
-  SELL_SOON: 'SELL SOON',
-  HOLD_TRACK: 'HOLDING — ON TRACK',
-  HOLD_RECOVER: 'HOLDING — RECOVERING'
-};
-
-function buildAIPromptOwned(stock, pos) {
-  const days = Math.floor((Date.now() - new Date(pos.buyDate).getTime()) / 86400000);
-  const livePrice = stock.livePrice ?? stock.price;
-  const liveRsi = stock.liveRsi ?? stock.rsi;
-  const pnlDollar = (livePrice - pos.buyPrice) * pos.shares;
-  const pnlPct = ((livePrice - pos.buyPrice) / pos.buyPrice) * 100;
-  const tier = getPortfolioTier(pos, livePrice, liveRsi, pnlDollar, pnlPct, days);
-  const warn = PORTFOLIO_TIER_LABELS[tier];
-  return `You are a short-term trading analyst reviewing an open position. The investor
-already owns this stock and is deciding whether to hold or sell RIGHT NOW.
-
-Stock: ${stock.ticker} (${stock.company || stock.ticker})
-Purchase price: $${pos.buyPrice.toFixed(2)}
-Current price: $${livePrice.toFixed(2)}
-Unrealized P&L: ${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)} (${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%)
-Days held: ${days} of intended ${durHoldLabel(pos.duration)} trade
-Original target: $${pos.target.toFixed(2)}
-Live target: $${stock.target.toFixed(2)}
-Stop-loss: $${pos.stop.toFixed(2)}
-Current RSI: ${liveRsi.toFixed(1)}
-Volume ratio vs average: ${stock.volRatio.toFixed(2)}x
-Current signal score: ${stock.score}/100
-Current risk score: ${stock.risk}/10
-Sell warning status: ${warn}
-
-Answer three things:
-1. HOLD or SELL right now, and the single most important reason why in one sentence.
-2. Two to three sentences on what the price action and indicators are saying at this exact moment.
-3. Probability the stock reaches the live target before hitting the stop-loss, as a percentage with a one-sentence explanation of what would need to happen for it to get there.
-
-Be direct. No disclaimers. Base everything on the data above.`;
+// Category -> most relevant single sector ETF for the "Relevant sector ETF
+// today" line in buildAIPrompt(). BROAD has no single relevant sector (SPY
+// already covers it), so it's intentionally absent — callers must handle null.
+function getSectorETFForCategory(category) {
+  return { BIOTECH: 'XBI', ENERGY: 'XLE', TECH: 'XLK' }[category] || null;
 }
 
-function buildAIPromptCandidate(stock) {
-  return `You are a short-term trading analyst. A retail investor is deciding whether
-to buy this stock RIGHT NOW or wait.
+// Unified Groq prompt for both owned and unowned stocks — replaces the old
+// buildAIPromptOwned/buildAIPromptCandidate split. `pos` is the result of
+// getOwnedPosition(ticker), or null/undefined for an unowned candidate.
+function buildAIPrompt(stock, pos) {
+  const livePrice = stock.livePrice ?? stock.price;
+  const liveRsi = stock.liveRsi ?? stock.rsi;
+  const todayChange = stock.todayChange ?? 0;
+  const duration = pos ? pos.duration : stock.duration;
+  const entry = pos ? pos.buyPrice : stock.entry;
+  const stop = pos ? pos.stop : stock.stop;
+  const aboveBelow = livePrice > stock.ma20 ? 'ABOVE' : 'BELOW';
+
+  let prompt = `You are a short-term trading analyst. A retail investor is asking for
+your independent opinion on this stock based on raw data only. Form your
+own view — do not default to any pre-existing recommendation.
 
 Stock: ${stock.ticker} (${stock.company || stock.ticker})
-Current price: $${stock.price.toFixed(2)}
-Today's change: ${stock.todayChange.toFixed(2)}%
-RSI: ${stock.rsi.toFixed(1)}
-Volume ratio vs average: ${stock.volRatio.toFixed(2)}x
+Current price: $${livePrice.toFixed(2)}
+Today's change: ${todayChange.toFixed(2)}%
+RSI (14-day): ${liveRsi.toFixed(1)}
+Volume ratio vs 10-day average: ${stock.volRatio.toFixed(2)}x
 Signal score: ${stock.score}/100
 Risk score: ${stock.risk}/10
-Trade duration classification: ${stock.duration}
-Entry: $${stock.entry.toFixed(2)} | Target: $${stock.target.toFixed(2)} | Stop-loss: $${stock.stop.toFixed(2)}
-Target capped by: ${stock.cappedBy || 'none'}
-Recent news: ${stock.news ? stock.news.headline : 'none'}
+Trade duration classification: ${duration}
+Entry/target/stop: $${entry.toFixed(2)} → $${stock.target.toFixed(2)} → $${stop.toFixed(2)}
+20-day MA: $${stock.ma20.toFixed(2)}
+Price vs MA: ${aboveBelow}
+`;
 
-Answer three things:
-1. BUY NOW or WAIT, and the single most important reason why in one sentence.
-2. Two to three sentences on what makes this an opportunity or a risk at this exact moment.
-3. Risk of waiting — what specifically could change in the next 24 hours that would make this setup worse or disappear entirely, described in one sentence.
+  // Macro context — omitted entirely if state.macroContext hasn't loaded.
+  if (state.macroContext) {
+    const ctx = state.macroContext;
+    const explanation = ctx.explanation || MACRO_INTERPRETATIONS[ctx.condition] || '';
+    const spyPct = ctx.changes?.SPY;
+    const category = stock.category || state.selectedUniverse || 'BROAD';
+    const sectorETF = getSectorETFForCategory(category);
+    const sectorPct = sectorETF ? ctx.changes?.[sectorETF] : null;
 
-Be direct. No disclaimers. Base everything on the data above.`;
+    prompt += `
+Current market condition: ${ctx.condition}
+Market context: ${explanation}
+SPY today: ${spyPct != null ? `${spyPct>=0?'+':''}${spyPct.toFixed(2)}` : 'N/A'}%`;
+    if (sectorETF && sectorPct != null) {
+      prompt += `\nRelevant sector ETF (${sectorETF}) today: ${sectorPct>=0?'+':''}${sectorPct.toFixed(2)}%`;
+    }
+    prompt += '\n';
+  }
+
+  if (pos) {
+    const days = Math.floor((Date.now() - new Date(pos.buyDate).getTime()) / 86400000);
+    const pnlDollar = (livePrice - pos.buyPrice) * pos.shares;
+    const pnlPct = ((livePrice - pos.buyPrice) / pos.buyPrice) * 100;
+
+    prompt += `
+Position status:
+  Purchased at: $${pos.buyPrice.toFixed(2)}
+  Unrealized P&L: ${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)} (${pnlPct>=0?'+':''}${pnlPct.toFixed(1)}%)
+  Days held: ${days} of intended ${durHoldLabel(pos.duration)} trade
+  Original target: $${pos.target.toFixed(2)}
+  Live target: $${stock.target.toFixed(2)}
+
+Answer these three questions:
+1. HOLD or SELL — your independent recommendation in one sentence, based only on the data above. Do not reference any app warning or system recommendation.
+2. What the price action and indicators are telling you right now in 2-3 sentences, factoring in the macro condition.
+3. Probability this stock reaches the live target before hitting the stop-loss, as a percentage with one sentence explaining what would need to happen.
+
+Be direct. No disclaimers. Base everything strictly on the data provided.`;
+  } else {
+    prompt += `
+Answer these three questions:
+1. BUY NOW or WAIT — your independent recommendation in one sentence, based only on the data above.
+2. What makes this an opportunity or a risk right now in 2-3 sentences, factoring in the macro condition.
+3. Risk of waiting — what could change in the next 24 hours that would make this setup worse or disappear, in one sentence.
+
+Be direct. No disclaimers. Base everything strictly on the data provided.`;
+  }
+
+  return prompt;
 }
 
 function parseAIAnswers(text) {
@@ -3481,7 +3503,7 @@ async function loadAIAnalysis(ticker) {
   sec.innerHTML = `<div class="ai-title">AI Analysis</div><div class="ai-loading"><span class="spinner"></span> Analyzing with Groq…</div>`;
 
   try {
-    const prompt = pos ? buildAIPromptOwned(stock, pos) : buildAIPromptCandidate(stock);
+    const prompt = buildAIPrompt(stock, pos);
     const result = await groqAnalyze(ticker, prompt);
     renderAIResult(result);
   } catch(e) {
