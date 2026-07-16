@@ -1975,13 +1975,50 @@ function buildAHStrip(ticker) {
   </div>`;
 }
 
+// Builds the 6-badge 2×3 grid for the redesigned stock card. Order matches
+// the approved mockup: volume multiple, RSI, exit timing, buy/sell signal +
+// score, volume-pattern flag, risk score. Pattern-flag priority (when more
+// than one of volBuild/meanReversion/consUpDays fires at once, only one
+// badge slot is available) is: reversal > volume build > consecutive up
+// days > none — an arbitrary but consistent tie-break, not a data change.
+function buildScBadges(s) {
+  const isBuySignal = s.signal === 'STRONG BUY' || s.signal === 'BUY' || s.signal === 'SOFT BUY';
+  const isDayExit = s.duration === 'DAY';
+  let patternValue = '—', patternLabel = 'PATTERN';
+  if (s.meanReversion) { patternValue = 'REVERSAL'; patternLabel = 'PATTERN'; }
+  else if (s.volBuild) { patternValue = 'BUILDING'; patternLabel = 'VOL PATTERN'; }
+  else if ((s.consUpDays || 0) >= 3) { patternValue = `${s.consUpDays}`; patternLabel = 'UP DAYS'; }
+  // Same 1-3/4-6/7-10 thresholds as calcRiskScore's existing risk-low/mid/hi
+  // buckets, remapped onto the new badge palette: amber is reserved for
+  // urgency/timing (not risk), so mid-risk reads as neutral rather than
+  // amber here.
+  const riskCls = s.risk <= 3 ? 'sc-badge-green' : s.risk <= 6 ? 'sc-badge-neutral' : 'sc-badge-red';
+
+  const badges = [
+    { value: `${s.volRatio.toFixed(1)}×`, label: 'VOLUME', cls: 'sc-badge-neutral' },
+    { value: `${s.rsi.toFixed(0)}`, label: 'RSI', cls: 'sc-badge-neutral' },
+    { value: durBadgeText(s.duration), label: 'TIMING', cls: isDayExit ? 'sc-badge-amber' : 'sc-badge-neutral' },
+    { value: `${s.score}`, label: s.signal, cls: isBuySignal ? 'sc-badge-green' : 'sc-badge-neutral' },
+    { value: patternValue, label: patternLabel, cls: 'sc-badge-neutral' },
+    { value: `${s.risk}/10`, label: 'RISK', cls: riskCls },
+  ];
+
+  return badges.map(b => `
+    <div class="sc-badge ${b.cls}">
+      <div class="sc-badge-value">${b.value}</div>
+      <div class="sc-badge-label">${b.label}</div>
+    </div>`).join('');
+}
+
 function renderStockCard(s, marketClosed) {
-  const chgSign = s.todayChange >= 0 ? '▲' : '▼';
-  const chgCls  = s.todayChange >= 0 ? 'change-pos' : 'change-neg';
-  const upside  = ((s.target - s.price) / s.price * 100).toFixed(1);
-  const riskCls = s.risk <= 3 ? 'risk-low' : s.risk <= 6 ? 'risk-mid' : 'risk-hi';
-  const durBadge = durBadgeClass(s.duration);
-  const sigBadge = sigBadgeClass(s.signal);
+  const priceCls = s.todayChange >= 0 ? 'pos' : 'neg';
+  const chgSign  = s.todayChange >= 0 ? '▲' : '▼';
+  const upside   = ((s.target - s.price) / s.price * 100).toFixed(1);
+  // rawTarget in calcEntryTargetStop() is an ATR-volatility projection off
+  // entry; cappedBy (when set) means that projection got capped down to a
+  // nearby resistance level instead — this note reflects whichever actually
+  // determined the shown target, it isn't new copy.
+  const targetNote = s.cappedBy ? `Target capped at ${s.cappedBy}` : 'Target based on ATR-volatility projection';
   const overlay      = marketClosed ? `<div class="closed-overlay">MARKET CLOSED</div>` : '';
   const ahStrip      = buildAHStrip(s.ticker);
   const actionBanner = buildSignalActionBanner(s);
@@ -1992,45 +2029,29 @@ function renderStockCard(s, marketClosed) {
   const daySuppressedOverlay = daySuppressed
     ? `<div class="day-suppressed-overlay">⚠ Entry window closed — DAY trade signals expire at 10am</div>`
     : '';
-  const hasExtraBadges = s.volBuild || s.meanReversion || (s.consUpDays >= 3);
-  const sigBadges = hasExtraBadges ? `
-    <div class="signal-extra-badges">
-      ${s.volBuild                 ? '<span class="badge badge-vol-build">VOL BUILD</span>' : ''}
-      ${s.meanReversion            ? '<span class="badge badge-reversal">REVERSAL</span>'  : ''}
-      ${(s.consUpDays||0) >= 3     ? `<span class="badge badge-up-days">${s.consUpDays} UP DAYS</span>` : ''}
-    </div>` : '';
 
   return `
     <div class="stock-card${daySuppressed ? ' stock-card-suppressed' : ''}" onclick="openStockModal('${s.ticker}')">
       ${overlay}
       ${daySuppressedOverlay}
       ${actionBanner}
-      <div class="card-top">
-        <div class="card-left">
-          <span class="ticker-sym">${s.ticker}</span>
-          <span class="price-mono">$${s.price.toFixed(2)}</span>
-          <span class="${chgCls}">${chgSign}${Math.abs(s.todayChange).toFixed(1)}%</span>
+      <div class="sc-header">
+        <div class="sc-header-row">
+          <span class="sc-ticker">${s.ticker}</span>
+          <span class="sc-price ${priceCls}">$${s.price.toFixed(2)}</span>
+          <span class="sc-pct ${priceCls}">${chgSign}${Math.abs(s.todayChange).toFixed(1)}%</span>
         </div>
-        <div class="card-right">
-          <span class="badge ${sigBadge}">${s.signal} ${s.score}</span>
-          <span class="badge ${durBadge}">${durBadgeText(s.duration)}</span>
+        <div class="sc-company">${s.company}</div>
+      </div>
+      <div class="sc-grid">
+        <div class="sc-target-card">
+          <div class="sc-target-row">Target $${s.target.toFixed(2)}<span class="sc-target-pct">▲${upside}%</span></div>
+          <div class="sc-target-note">${targetNote}</div>
+          <div class="sc-stop-row">Stop $${s.stop.toFixed(2)}</div>
         </div>
-      </div>
-      <div class="card-mid">
-        <span class="company-name">${s.company}</span>
-        <span class="risk-pill ${riskCls}">Risk: ${s.risk}/10</span>
-        <span class="vol-chip">${s.volRatio.toFixed(1)}× vol</span>
-      </div>
-      ${sigBadges}
-      <div class="card-divider"></div>
-      <div class="card-levels">
-        <span>Entry <span class="mono">$${s.entry.toFixed(2)}</span></span>
-        <span>→</span>
-        <span class="level-target">Target <span class="mono">$${s.target.toFixed(2)}</span> (▲${upside}%)</span>
-      </div>
-      ${s.cappedBy ? `<div class="target-capped-note">Target capped at ${s.cappedBy}</div>` : ''}
-      <div class="card-sub">
-        Stop <span class="mono">$${s.stop.toFixed(2)}</span> · RSI ${s.rsi.toFixed(0)} · ${s.priceRange}
+        <div class="sc-badge-grid">
+          ${buildScBadges(s)}
+        </div>
       </div>
       ${buildCardNewsSnippet(s)}
       ${buildScoreBreakdown(s)}
@@ -2088,9 +2109,9 @@ function getNewsSentiment(hasNeg, createdAt) {
 }
 
 function buildCardNewsSnippet(s) {
-  if (!s.news) return `<div class="card-news-section"><span class="card-no-news">No recent news</span></div>`;
+  if (!s.news) return `<div class="sc-news"><span class="sc-news-nonews">No recent news</span></div>`;
   const ageH = (Date.now() - new Date(s.news.created_at).getTime()) / 3600000;
-  if (ageH > 24) return `<div class="card-news-section"><span class="card-no-news">No recent news</span></div>`;
+  if (ageH > 24) return `<div class="sc-news"><span class="sc-news-nonews">No recent news</span></div>`;
   const ageStr = newsTimeAgo(s.news);
   const sentiment = getNewsSentiment(s.hasNegNews, s.news.created_at);
   const sentCls = sentiment === 'POSITIVE' ? 'sent-pos' : sentiment === 'NEGATIVE' ? 'sent-neg' : 'sent-neutral';
@@ -2098,10 +2119,9 @@ function buildCardNewsSnippet(s) {
   const chgStr = `${s.todayChange >= 0 ? '+' : ''}${s.todayChange.toFixed(1)}% today`;
   const hl = (s.news.headline || '').substring(0, 85);
   const tail = (s.news.headline || '').length > 85 ? '…' : '';
-  return `<div class="card-news-section">
-    <div class="card-news-label">NEWS</div>
-    <div class="card-news-headline">"${hl}${tail}"</div>
-    <div class="card-news-meta">
+  return `<div class="sc-news">
+    <div class="sc-news-headline">"${hl}${tail}"</div>
+    <div class="sc-news-meta">
       <span class="card-news-age">${ageStr}</span>
       <span class="news-sentiment ${sentCls}">${sentiment}</span>
       <span class="${chgCls}">${chgStr}</span>
@@ -2195,12 +2215,31 @@ function sbCheckIcon(r) {
   return r.neutral ? { icon: '—', cls: 'sb-chk-neutral' } : { icon: '✗', cls: 'sb-chk-no' };
 }
 
+// Category color for a score-breakdown row, matching the card's badge
+// semantics: volume/technical stats read as the neutral/blue "informational"
+// tone, momentum-family signals read green (matches the buy-signal badge
+// tone), and any negative contribution reads red regardless of category —
+// it's still hurting the score. Purely a display grouping, not a change to
+// which rows exist or what they're worth (see computeScoreBreakdown).
+function sbContribClass(key, pts) {
+  if (pts < 0) return 'sc-contrib-negative';
+  if (key === 'vol' || key === 'rsi' || key === 'ma' || key === 'vbuild') return 'sc-contrib-vol';
+  if (key === 'mom' || key === 'relstr' || key === 'consup' || key === 'rev') return 'sc-contrib-momentum';
+  if (key === 'macro') return pts > 0 ? 'sc-contrib-momentum' : 'sc-contrib-neutral';
+  return 'sc-contrib-neutral';
+}
+
 function buildScoreBreakdown(s) {
   const rows = computeScoreBreakdown(s);
   const id   = `sb-${s.ticker}`;
 
-  const top2    = rows.filter(r => r.pts > 0).sort((a,b) => b.pts - a.pts).slice(0, 2);
-  const preview = top2.length ? ' · ' + top2.map(r => `${r.short} +${r.pts}`).join(', ') : '';
+  // Compact contributions line: every row that actually moved the score
+  // (excludes the always-present 'norm' reconciliation row and any 0-pt
+  // rows), dot-separated, colored by category.
+  const contribRows = rows.filter(r => r.key !== 'norm' && r.pts !== 0);
+  const contribsHtml = contribRows.length
+    ? contribRows.map(r => `<span class="sc-contrib ${sbContribClass(r.key, r.pts)}">${r.short} ${r.pts > 0 ? '+' : ''}${r.pts}</span>`).join('<span class="sc-contrib-dot">·</span>')
+    : `<span class="sc-contrib sc-contrib-neutral">No contributing signals</span>`;
 
   const rowsHtml = rows.map(r => {
     const ptsCls = r.pts > 0 ? 'sb-pos' : r.pts < 0 ? 'sb-neg' : 'sb-zero';
@@ -2213,11 +2252,16 @@ function buildScoreBreakdown(s) {
     </div>`;
   }).join('');
 
-  return `<div class="score-breakdown-wrap">
-    <button class="sb-toggle" onclick="event.stopPropagation();toggleBreakdown('${id}')">
-      SCORE BREAKDOWN — ${s.score} pts${preview} <span class="sb-arrow">▼</span>
+  return `<div class="sc-score">
+    <div class="sc-score-header">
+      <span class="sc-score-title">Score breakdown</span>
+      <span class="sc-score-total">${s.score} pts</span>
+    </div>
+    <div class="sc-score-contribs">${contribsHtml}</div>
+    <button class="sc-score-toggle" onclick="event.stopPropagation();toggleBreakdown('${id}')">
+      Full breakdown <span class="sb-arrow">▼</span>
     </button>
-    <div class="sb-body hidden" id="${id}">${rowsHtml}</div>
+    <div class="sc-score-body hidden" id="${id}">${rowsHtml}</div>
   </div>`;
 }
 
