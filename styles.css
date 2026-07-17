@@ -406,20 +406,24 @@ a { color: var(--blue); }
   color: var(--yellow);
   text-align: center;
 }
+/* Was a full-card position:absolute translucent scrim — that washed out
+   the new color-coded badges (everything read as flat gray underneath it)
+   and its centered text happened to land on top of the Pattern badge with
+   the new taller card layout. Now a normal-flow top banner instead, same
+   family as .day-suppressed-overlay/.action-banner, so it can't overlap
+   or discolor any card content below it. */
 .closed-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(8,12,16,0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  background: var(--badge-neutral-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  text-align: center;
   font-family: var(--cond);
   font-size: 11px;
   font-weight: 700;
-  color: var(--muted);
+  color: var(--badge-neutral-label);
   letter-spacing: 2px;
-  pointer-events: none;
-  z-index: 2;
 }
 .card-top {
   display: flex;
@@ -491,6 +495,12 @@ a { color: var(--blue); }
 .sc-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  /* Grid items default to align-items:stretch, which was forcing the
+     shorter Target/Stop card to stretch to match the taller 3-row badge
+     grid, then margin-top:auto on .sc-stop-row pushed Stop to the bottom
+     of that artificial height — the visible gap. align-items:start lets
+     each column size to its own content instead. */
+  align-items: start;
   gap: 10px;
   margin-top: 12px;
 }
@@ -503,13 +513,12 @@ a { color: var(--blue); }
   display: flex;
   flex-direction: column;
   gap: 6px;
-  height: 100%;
   box-sizing: border-box;
 }
 .sc-target-row { font-family: var(--mono); font-size: 13px; color: #ffffff; }
 .sc-target-row .sc-target-pct { color: var(--badge-green-value); font-weight: 700; margin-left: 4px; }
 .sc-target-note { font-size: 10.5px; color: var(--badge-neutral-label); line-height: 1.3; }
-.sc-stop-row { font-family: var(--mono); font-size: 12px; color: var(--badge-amber-value); margin-top: auto; }
+.sc-stop-row { font-family: var(--mono); font-size: 12px; color: var(--badge-amber-value); }
 
 /* Right column: 2×3 grid of small badge cards */
 .sc-badge-grid {
