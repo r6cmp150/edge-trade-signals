@@ -2482,9 +2482,9 @@ async function openStockModal(ticker) {
       </div>
 
       <div class="chart-range-btns">
-        <button class="chart-range-btn active" data-range="3D" onclick="renderChartRange('3D')">3 Days</button>
+        <button class="chart-range-btn active" data-range="1D" onclick="renderChartRange('1D')">1 Day</button>
+        <button class="chart-range-btn" data-range="1W" onclick="renderChartRange('1W')">1 Week</button>
         <button class="chart-range-btn" data-range="1M" onclick="renderChartRange('1M')">1 Month</button>
-        <button class="chart-range-btn" data-range="YTD" onclick="renderChartRange('YTD')">YTD</button>
       </div>
       <div class="chart-wrap">
         <canvas id="price-chart"></canvas>
@@ -2598,8 +2598,8 @@ async function openStockModal(ticker) {
       <button class="btn btn-ghost" onclick="closeModal()">✕</button>
     `;
 
-    // Draw chart — default 3D
-    renderChartRange('3D');
+    // Draw chart — default 1D
+    renderChartRange('1D');
 
     // Restore AI if cached
     if (state.aiCache[ticker]) {
@@ -2618,20 +2618,26 @@ function renderChartRange(range) {
   });
 
   let bars, isHourly = false;
-  if (range === '3D') {
-    if (_chartBarsHourly.length >= 6) {
-      bars = _chartBarsHourly;
-      isHourly = true;
+  if (range === '1D') {
+    isHourly = true;
+    // Today's hourly bars only. If today has none yet (pre-market, or the
+    // feed's latest bar is from a prior session on a weekend/holiday), fall
+    // back to whichever calendar day is most recent in the already-fetched
+    // hourly window rather than showing an empty chart.
+    if (_chartBarsHourly.length) {
+      const latestDay = new Date(_chartBarsHourly[_chartBarsHourly.length - 1].t).toDateString();
+      bars = _chartBarsHourly.filter(b => new Date(b.t).toDateString() === latestDay);
     } else {
-      bars = _chartBarsDaily.slice(-3);
+      bars = [];
     }
+  } else if (range === '1W') {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
+    bars = _chartBarsDaily.filter(b => new Date(b.t) >= cutoff);
   } else if (range === '1M') {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
     bars = _chartBarsDaily.filter(b => new Date(b.t) >= cutoff);
   } else {
-    const ytdStart = new Date(new Date().getFullYear(), 0, 1);
-    bars = _chartBarsDaily.filter(b => new Date(b.t) >= ytdStart);
-    if (!bars.length) bars = _chartBarsDaily.slice(-90);
+    bars = [];
   }
 
   renderPriceChart(bars, _chartCurrentPrice, isHourly);
