@@ -22,11 +22,16 @@ const RAW_SCORE_MAX = 135;
 // VIX excluded — it's a CBOE index, not an equity, and is not obtainable through
 // Alpaca's /stocks endpoints on any tier. See Macro Market Overlay addendum.
 const MACRO_ETFS = ['SPY', 'XLE', 'XLK', 'XBI', 'XLF', 'XLI', 'XLRE', 'XLY'];
-// FINANCIAL universe tickers using a hyphen suffix (SPAC units, one dual-class
-// stock) whose Alpaca resolution is unverified — 7 are "-U" SPAC unit tickers
-// Alpaca likely doesn't list as separate tradable assets, and CRD-A is a
-// share-class ticker Alpaca may expect as "CRD.A" instead. See checkUnresolvedSymbols().
-const UNVERIFIED_HYPHEN_SYMBOLS = ['AAC-U', 'CRD-A', 'DGAC-U', 'FTRA-U', 'MTNE-U', 'OCAC-U', 'SAMO-U', 'VII-U'];
+// Confirmed in production: Alpaca rejects a batch /stocks/snapshots request
+// with a 400 ("invalid symbol") the moment it contains one malformed ticker
+// (AAC-U did this) — it does NOT silently omit just that symbol as originally
+// assumed below. AAC-U has since been removed from FINANCIAL entirely; these
+// remaining 6 are unverified hyphen/share-class tickers (SPAC units, one
+// dual-class stock) still in FINANCIAL, now caught unconditionally by
+// sanitizeTickerBatch() before any request goes out — this list only drives
+// checkUnresolvedSymbols()'s console warning so an exclusion is visible
+// rather than silent, it doesn't gate what gets sent anymore.
+const UNVERIFIED_HYPHEN_SYMBOLS = ['CRD-A', 'DGAC-U', 'FTRA-U', 'MTNE-U', 'OCAC-U', 'SAMO-U', 'VII-U'];
 const MACRO_CONDITIONS = [
   'RISK_OFF', 'GEOPOLITICAL', 'TECH_ROTATION_OUT', 'BROAD_RALLY', 'MOMENTUM_DAY',
   'SECTOR_WEAKNESS_BIOTECH', 'SECTOR_WEAKNESS_ENERGY', 'SECTOR_WEAKNESS_TECH', 'CHOPPY'
@@ -333,99 +338,99 @@ const STOCK_UNIVERSES = {
   //   own catalysts, SPAC shells sit flat near $10 pre-deal, and closed-end
   //   funds trade more on NAV/dividend yield than momentum.
   FINANCIAL: [...new Set([
-  'AAC-U','AACP','AAOG','AAOX','AAPD','ABTC','ABX','ACGC','ACIC','ACP',
-  'ADBG','AEF','AEHG','AEMS','AESP','AESR','AEXA','AFB','AFCG','AFIF',
-  'AFRU','AGD','AII','AIYY','ALF','ALPX','ALTI','ALUB','AMAN','AMAX',
-  'AMKL','AMPU','AMZD','AMZY','ANSC','ANY','AOD','APLX','APLY','APMC',
-  'APUR','APXT','ARCC','ARCL','ARCX','ARDC','ARMG','ARMH','ARTC','ASG',
-  'ASST','ASTN','ASTX','ASTY','ATCH','ATII','AVAT','AVK','AVS','AVXX',
-  'AWF','AWP','AXTL','AXTU','AXTX','BABU','BACC','BAIG','BATT','BBCQ',
-  'BBDC','BBHM','BBLU','BBN','BCAR','BCAT','BCBP','BCCQU','BCG','BCIC',
-  'BCSF','BCSS','BCX','BDCI','BDJ','BDRY','BEAG','BGB','BGC','BGDE',
-  'BGH','BGR','BGT','BGX','BGY','BHAV','BHK','BIDWU','BIT','BITO',
-  'BITU','BITX','BIZD','BKT','BLNE','BLOX','BLSG','BLW','BMEZ','BMNG',
-  'BMNR','BMNU','BNBX','BNKK','BOE','BPRE','BRBS','BREZ','BRKHU','BRR',
-  'BRRR','BRW','BSCQ','BSCR','BSCT','BSCU','BSCV','BSOL','BTAL','BTBT',
-  'BTCL','BTCS','BTCZ','BTGO','BTX','BTZ','BUYW','BWG','CAES','CAII',
-  'CANE','CBRG','CBRX','CCAP','CCAQ','CCCTU','CCIF','CCII','CCIX','CCRP',
-  'CCUP','CCXI','CD','CEGX','CEPF','CEPO','CEPT','CEPV','CFFN','CGBD',
-  'CGCFU','CHI','CHW','CHY','CIA','CIEG','CIFG','CIFU','CIK','CION',
-  'CLM','CLSK','CLSX','CMII','COHH','COIG','COIW','CONL','CONX','CONY',
-  'COPY','CORD','CORN','COTG','COZX','CPZ','CRAN','CRCA','CRCD','CRCG',
-  'CRCO','CRD-A','CRF','CRMG','CRMU','CRMX','CRPT','CRWG','CRWU','CSEX',
-  'CTAA','CUB','CWD','CWVX','CXII','DAAQ','DAMD','DAPP','DBCA','DBL',
-  'DBO','DBRG','DDFZ','DDTZ','DFDV','DGAC-U','DGICA','DHF','DHY','DIAL',
-  'DIV','DJTU','DLY','DMAA','DMII','DNP','DOMH','DPG','DRAL','DRDB',
-  'DRN','DRV','DSL','DSM','DSU','DTCX','DUG','DWSH','DXD','DYNC',
-  'EAD','EARN','ECAT','ECC','ECHX','EDD','EDF','EDZ','EEV','EFR',
-  'EFT','EHI','EHTH','EIC','EIDO','EIM','EMD','EOD','EOSU','ERC',
-  'ERY','ESN','ETH','ETHA','ETHE','ETHT','ETHU','ETHW','ETJ','ETU',
-  'ETV','ETW','ETY','EUM','EVAC','EVF','EVN','EVV','EWZS','EXG',
-  'EZET','EZRA','FACT','FAX','FBLA','FBY','FCBM','FCRS','FCT','FDD',
-  'FDMMU','FETH','FFC','FGMC','FGNX','FGRU','FIGX','FLD','FLG','FLYT',
-  'FMAC','FMNB','FNB','FNRN','FOF','FOTO','FPE','FPEI','FPF','FRA',
-  'FRBA','FRBT','FRST','FSCO','FSIG','FSK','FSMB','FSOL','FSSL','FTCA',
-  'FTF','FTHY','FTMA','FTMH','FTMN','FTMS','FTMU','FTNJ','FTNY','FTPA',
-  'FTRA-U','FUTG','FVCB','FWACU','FXAC','GAB','GAIN','GBAB','GBDC','GCGR',
-  'GCMG','GCV','GDOT','GDXY','GECC','GEMI','GGN','GGT','GHI','GHXIU',
-  'GHY','GIAX','GLED','GLGG','GLNK','GLO','GLQ','GLWG','GLXU','GMEU',
-  'GNT','GNW','GOF','GOOY','GPAT','GRAF','GREE','GSBD','GSOL','GSRF',
-  'GSRV','GSUI','GUG','GUT','HAPN','HBAN','HBR','HDGE','HFRO','HGBL',
-  'HGLB','HGTY','HIO','HIPS','HIVE','HIX','HIYY','HODL','HODU','HOOZ',
-  'HOPE','HPI','HPS','HQL','HRZN','HSDT','HTAB','HTGC','HUTG','HYI',
-  'HYSA','HYT','IACO','IACQ','IAE','IBTK','IBX','ICLN','ICMB','ICOI',
-  'IDX','IEAG','IFLN','IFN','IGD','IGR','IHD','IIM','INFH','INV',
-  'IONL','IONZ','IPCX','IPFX','IPST','IPVVU','IQI','IRE','IREG','IREX',
-  'IREZ','ISD','ISNRU','ISUL','IVOL','IWMY','JABRU','JACS','JCAP','JETD',
-  'JFR','JGH','JOBX','JOF','JONEU','JPC','JQC','JRI','JRS','JRVR',
-  'KBDC','KBON','KBWD','KBWY','KEYY','KINS','KIO','KMEM','KMLI','KORU',
-  'KPDD','KRAQ','KRNY','KTEC','KTF','KTUP','KWY','KYN','LABD','LCCC',
-  'LCDL','LDI','LEO','LEUX','LFGY','LIEN','LIFE','LITP','LITU','LMFA',
-  'LOFF','LPAA','LPBB','LPRO','LQTI','LTGRU','LULG','LUNL','MARA','MARO',
-  'MBAV','MBI','MBS','MCAH','MCHB','MCN','MDIV','MEGI','MEME','METD',
-  'METV','MFIC','MFIN','MFM','MGF','MHD','MHF','MIACU','MIN','MIY',
-  'MLAA','MLN','MMD','MMT','MMU','MORT','MPG','MQY','MRCOU','MRNY',
-  'MSBT','MSD','MSDL','MSFD','MSFL','MSFO','MSFX','MSIF','MSOS','MSOX',
-  'MST','MSTP','MSTU','MSTW','MSTX','MSTY','MSTZ','MTNE-U','MUA','MUC',
-  'MUD','MUJ','MULL','MUZ','MYI','MYN','MYX','MZYX','NAC','NAD',
-  'NAKA','NAN','NAVI','NBB','NBH','NBIG','NBIZ','NBXG','NCA','NCDL',
-  'NCIQ','NCPL','NCV','NCZ','NDMO','NEA','NETG','NEWT','NFBK','NFJ',
-  'NFLU','NFLY','NFXL','NHIC','NHIV','NHS','NIKL','NKX','NMAI','NMCO',
-  'NMFC','NML','NMZ','NOWL','NPAC','NPB','NPCT','NPFD','NRK','NRO',
-  'NSLR','NUV','NVD','NVDG','NVDQ','NVDX','NVDY','NVG','NVOX','NVTX',
-  'NVYY','NWBI','NXP','NZF','OBDC','OCAC-U','OCCI','OCSL','OFS','OHAC',
-  'OIA','OKLL','OMAH','ONDG','ONDL','ONDU','ONG','ONX','OPEG','OPEX',
-  'OPFI','OPP','OPRT','ORCU','ORCX','OSG','OSPRU','OTAI','OTF','OTGA',
-  'OWL','OXLC','OXSQ','PATX','PAXS','PBD','PCAP','PCF','PCN','PCQ',
-  'PCSC','PDBC','PDDL','PDI','PDO','PDT','PECE','PFFD','PFL','PFLD',
-  'PFLT','PFN','PFXF','PGF','PGX','PHK','PILL','PIM','PLMK','PLTA',
-  'PLTD','PLTG','PLTM','PLTW','PLU','PLUL','PLUN','PML','PMM','PMO',
-  'PNBK','PNI','PNNT','POEL','PONX','PPLT','PPT','PRAA','PRCH','PREF',
-  'PSBD','PSEC','PTA','PTIR','PTY','PURR','PWP','PWRL','PYPG','QADR',
-  'QAT','QBTX','QBTZ','QCMD','QCML','QID','QLEP','QPUX','QQQD','QRED',
-  'QSEA','QSU','QUBX','QYLD','RA','RAAQ','RAC','RACD','RAM','RBLU',
-  'RCAX','RCS','RDAG','RDWU','RETL','REXC','RFI','RFMZ','RGTU','RGTX',
-  'RGTZ','RIET','RILY','RIOT','RIV','RKLX','RKLZ','RKT','RLTY','RMBI',
-  'RMT','RPC','RPHS','RQI','RTAC','RVSB','RVT','RWAY','RWM','RYLD',
-  'SABA','SAC','SAGU','SAMO-U','SAR','SBET','SBND','SBTU','SBXE','SCD',
-  'SCM','SCOP','SDEV','SDHI','SDHY','SEMY','SHFS','SHNY','SHOTU','SHPU',
-  'SIEB','SJB','SKDD','SKHL','SKHU','SKHX','SKHZ','SLNH','SLON','SLQT',
-  'SLRC','SMB','SMCL','SMCX','SMCY','SMCZ','SMU','SMUP','SNAG','SNDC',
-  'SNDG','SNDQ','SNOY','SNXX','SOFA','SOFI','SOFX','SOLZ','SOUX','SPAL',
-  'SPAX','SPCF','SPCH','SPCM','SPCU','SPDN','SPFF','SPKL','SPOG','SPSK',
-  'SPXX','SPYT','SSAC','SSG','SSK','SSPC','STEW','STEX','STXU','SUIG',
-  'SVAQ','SVIV','SVOL','SWZ','SZZL','TACH','TACO','TAIL','TAVI','TCPC',
-  'TDAC','TDF','TDWD','TEI','TETH','TEUP','TFSL','THQ','THW','TILL',
-  'TIPT','TIPX','TMS','TNGY','TPVG','TRAD','TRIN','TSDD','TSEG','TSI',
-  'TSII','TSL','TSLG','TSLL','TSLQ','TSLT','TSLX','TSLZ','TSMY','TSMZ',
-  'TTDU','TVIV','TVIVU','TWAV','TXXD','TYA','UAE','UBRL','UBT','UDN',
-  'UECG','UGE','ULTI','UMAL','UNG','UNL','UPSX','USA','USAX','USDE',
-  'USGG','USLV','USOY','UUUG','UWMC','UXRP','VACI','VBF','VCV','VEL',
-  'VELL','VGM','VGSR','VII-U','VIXM','VKI','VKQ','VLY','VMO','VNM',
-  'VVR','WAGN','WARP','WCMI','WDI','WEBS','WENN','WHF','WIW','WSBF',
-  'WTID','WTIU','WU','WULF','WYFL','XCBE','XFLT','XNDX','XOMO','XOVR',
-  'XRP','XRPC','XRPI','XRPN','XRPZ','XSLL','XXI','XZO','YBTC','YETH',
-  'YICCU','YLD','YMAG','YMAX','YQQQ','YYY','ZKP','ZTR',
+  'AACP','AAOG','AAOX','AAPD','ABTC','ABX','ACGC','ACIC','ACP','ADBG',
+  'AEF','AEHG','AEMS','AESP','AESR','AEXA','AFB','AFCG','AFIF','AFRU',
+  'AGD','AII','AIYY','ALF','ALPX','ALTI','ALUB','AMAN','AMAX','AMKL',
+  'AMPU','AMZD','AMZY','ANSC','ANY','AOD','APLX','APLY','APMC','APUR',
+  'APXT','ARCC','ARCL','ARCX','ARDC','ARMG','ARMH','ARTC','ASG','ASST',
+  'ASTN','ASTX','ASTY','ATCH','ATII','AVAT','AVK','AVS','AVXX','AWF',
+  'AWP','AXTL','AXTU','AXTX','BABU','BACC','BAIG','BATT','BBCQ','BBDC',
+  'BBHM','BBLU','BBN','BCAR','BCAT','BCBP','BCCQU','BCG','BCIC','BCSF',
+  'BCSS','BCX','BDCI','BDJ','BDRY','BEAG','BGB','BGC','BGDE','BGH',
+  'BGR','BGT','BGX','BGY','BHAV','BHK','BIDWU','BIT','BITO','BITU',
+  'BITX','BIZD','BKT','BLNE','BLOX','BLSG','BLW','BMEZ','BMNG','BMNR',
+  'BMNU','BNBX','BNKK','BOE','BPRE','BRBS','BREZ','BRKHU','BRR','BRRR',
+  'BRW','BSCQ','BSCR','BSCT','BSCU','BSCV','BSOL','BTAL','BTBT','BTCL',
+  'BTCS','BTCZ','BTGO','BTX','BTZ','BUYW','BWG','CAES','CAII','CANE',
+  'CBRG','CBRX','CCAP','CCAQ','CCCTU','CCIF','CCII','CCIX','CCRP','CCUP',
+  'CCXI','CD','CEGX','CEPF','CEPO','CEPT','CEPV','CFFN','CGBD','CGCFU',
+  'CHI','CHW','CHY','CIA','CIEG','CIFG','CIFU','CIK','CION','CLM',
+  'CLSK','CLSX','CMII','COHH','COIG','COIW','CONL','CONX','CONY','COPY',
+  'CORD','CORN','COTG','COZX','CPZ','CRAN','CRCA','CRCD','CRCG','CRCO',
+  'CRD-A','CRF','CRMG','CRMU','CRMX','CRPT','CRWG','CRWU','CSEX','CTAA',
+  'CUB','CWD','CWVX','CXII','DAAQ','DAMD','DAPP','DBCA','DBL','DBO',
+  'DBRG','DDFZ','DDTZ','DFDV','DGAC-U','DGICA','DHF','DHY','DIAL','DIV',
+  'DJTU','DLY','DMAA','DMII','DNP','DOMH','DPG','DRAL','DRDB','DRN',
+  'DRV','DSL','DSM','DSU','DTCX','DUG','DWSH','DXD','DYNC','EAD',
+  'EARN','ECAT','ECC','ECHX','EDD','EDF','EDZ','EEV','EFR','EFT',
+  'EHI','EHTH','EIC','EIDO','EIM','EMD','EOD','EOSU','ERC','ERY',
+  'ESN','ETH','ETHA','ETHE','ETHT','ETHU','ETHW','ETJ','ETU','ETV',
+  'ETW','ETY','EUM','EVAC','EVF','EVN','EVV','EWZS','EXG','EZET',
+  'EZRA','FACT','FAX','FBLA','FBY','FCBM','FCRS','FCT','FDD','FDMMU',
+  'FETH','FFC','FGMC','FGNX','FGRU','FIGX','FLD','FLG','FLYT','FMAC',
+  'FMNB','FNB','FNRN','FOF','FOTO','FPE','FPEI','FPF','FRA','FRBA',
+  'FRBT','FRST','FSCO','FSIG','FSK','FSMB','FSOL','FSSL','FTCA','FTF',
+  'FTHY','FTMA','FTMH','FTMN','FTMS','FTMU','FTNJ','FTNY','FTPA','FTRA-U',
+  'FUTG','FVCB','FWACU','FXAC','GAB','GAIN','GBAB','GBDC','GCGR','GCMG',
+  'GCV','GDOT','GDXY','GECC','GEMI','GGN','GGT','GHI','GHXIU','GHY',
+  'GIAX','GLED','GLGG','GLNK','GLO','GLQ','GLWG','GLXU','GMEU','GNT',
+  'GNW','GOF','GOOY','GPAT','GRAF','GREE','GSBD','GSOL','GSRF','GSRV',
+  'GSUI','GUG','GUT','HAPN','HBAN','HBR','HDGE','HFRO','HGBL','HGLB',
+  'HGTY','HIO','HIPS','HIVE','HIX','HIYY','HODL','HODU','HOOZ','HOPE',
+  'HPI','HPS','HQL','HRZN','HSDT','HTAB','HTGC','HUTG','HYI','HYSA',
+  'HYT','IACO','IACQ','IAE','IBTK','IBX','ICLN','ICMB','ICOI','IDX',
+  'IEAG','IFLN','IFN','IGD','IGR','IHD','IIM','INFH','INV','IONL',
+  'IONZ','IPCX','IPFX','IPST','IPVVU','IQI','IRE','IREG','IREX','IREZ',
+  'ISD','ISNRU','ISUL','IVOL','IWMY','JABRU','JACS','JCAP','JETD','JFR',
+  'JGH','JOBX','JOF','JONEU','JPC','JQC','JRI','JRS','JRVR','KBDC',
+  'KBON','KBWD','KBWY','KEYY','KINS','KIO','KMEM','KMLI','KORU','KPDD',
+  'KRAQ','KRNY','KTEC','KTF','KTUP','KWY','KYN','LABD','LCCC','LCDL',
+  'LDI','LEO','LEUX','LFGY','LIEN','LIFE','LITP','LITU','LMFA','LOFF',
+  'LPAA','LPBB','LPRO','LQTI','LTGRU','LULG','LUNL','MARA','MARO','MBAV',
+  'MBI','MBS','MCAH','MCHB','MCN','MDIV','MEGI','MEME','METD','METV',
+  'MFIC','MFIN','MFM','MGF','MHD','MHF','MIACU','MIN','MIY','MLAA',
+  'MLN','MMD','MMT','MMU','MORT','MPG','MQY','MRCOU','MRNY','MSBT',
+  'MSD','MSDL','MSFD','MSFL','MSFO','MSFX','MSIF','MSOS','MSOX','MST',
+  'MSTP','MSTU','MSTW','MSTX','MSTY','MSTZ','MTNE-U','MUA','MUC','MUD',
+  'MUJ','MULL','MUZ','MYI','MYN','MYX','MZYX','NAC','NAD','NAKA',
+  'NAN','NAVI','NBB','NBH','NBIG','NBIZ','NBXG','NCA','NCDL','NCIQ',
+  'NCPL','NCV','NCZ','NDMO','NEA','NETG','NEWT','NFBK','NFJ','NFLU',
+  'NFLY','NFXL','NHIC','NHIV','NHS','NIKL','NKX','NMAI','NMCO','NMFC',
+  'NML','NMZ','NOWL','NPAC','NPB','NPCT','NPFD','NRK','NRO','NSLR',
+  'NUV','NVD','NVDG','NVDQ','NVDX','NVDY','NVG','NVOX','NVTX','NVYY',
+  'NWBI','NXP','NZF','OBDC','OCAC-U','OCCI','OCSL','OFS','OHAC','OIA',
+  'OKLL','OMAH','ONDG','ONDL','ONDU','ONG','ONX','OPEG','OPEX','OPFI',
+  'OPP','OPRT','ORCU','ORCX','OSG','OSPRU','OTAI','OTF','OTGA','OWL',
+  'OXLC','OXSQ','PATX','PAXS','PBD','PCAP','PCF','PCN','PCQ','PCSC',
+  'PDBC','PDDL','PDI','PDO','PDT','PECE','PFFD','PFL','PFLD','PFLT',
+  'PFN','PFXF','PGF','PGX','PHK','PILL','PIM','PLMK','PLTA','PLTD',
+  'PLTG','PLTM','PLTW','PLU','PLUL','PLUN','PML','PMM','PMO','PNBK',
+  'PNI','PNNT','POEL','PONX','PPLT','PPT','PRAA','PRCH','PREF','PSBD',
+  'PSEC','PTA','PTIR','PTY','PURR','PWP','PWRL','PYPG','QADR','QAT',
+  'QBTX','QBTZ','QCMD','QCML','QID','QLEP','QPUX','QQQD','QRED','QSEA',
+  'QSU','QUBX','QYLD','RA','RAAQ','RAC','RACD','RAM','RBLU','RCAX',
+  'RCS','RDAG','RDWU','RETL','REXC','RFI','RFMZ','RGTU','RGTX','RGTZ',
+  'RIET','RILY','RIOT','RIV','RKLX','RKLZ','RKT','RLTY','RMBI','RMT',
+  'RPC','RPHS','RQI','RTAC','RVSB','RVT','RWAY','RWM','RYLD','SABA',
+  'SAC','SAGU','SAMO-U','SAR','SBET','SBND','SBTU','SBXE','SCD','SCM',
+  'SCOP','SDEV','SDHI','SDHY','SEMY','SHFS','SHNY','SHOTU','SHPU','SIEB',
+  'SJB','SKDD','SKHL','SKHU','SKHX','SKHZ','SLNH','SLON','SLQT','SLRC',
+  'SMB','SMCL','SMCX','SMCY','SMCZ','SMU','SMUP','SNAG','SNDC','SNDG',
+  'SNDQ','SNOY','SNXX','SOFA','SOFI','SOFX','SOLZ','SOUX','SPAL','SPAX',
+  'SPCF','SPCH','SPCM','SPCU','SPDN','SPFF','SPKL','SPOG','SPSK','SPXX',
+  'SPYT','SSAC','SSG','SSK','SSPC','STEW','STEX','STXU','SUIG','SVAQ',
+  'SVIV','SVOL','SWZ','SZZL','TACH','TACO','TAIL','TAVI','TCPC','TDAC',
+  'TDF','TDWD','TEI','TETH','TEUP','TFSL','THQ','THW','TILL','TIPT',
+  'TIPX','TMS','TNGY','TPVG','TRAD','TRIN','TSDD','TSEG','TSI','TSII',
+  'TSL','TSLG','TSLL','TSLQ','TSLT','TSLX','TSLZ','TSMY','TSMZ','TTDU',
+  'TVIV','TVIVU','TWAV','TXXD','TYA','UAE','UBRL','UBT','UDN','UECG',
+  'UGE','ULTI','UMAL','UNG','UNL','UPSX','USA','USAX','USDE','USGG',
+  'USLV','USOY','UUUG','UWMC','UXRP','VACI','VBF','VCV','VEL','VELL',
+  'VGM','VGSR','VII-U','VIXM','VKI','VKQ','VLY','VMO','VNM','VVR',
+  'WAGN','WARP','WCMI','WDI','WEBS','WENN','WHF','WIW','WSBF','WTID',
+  'WTIU','WU','WULF','WYFL','XCBE','XFLT','XNDX','XOMO','XOVR','XRP',
+  'XRPC','XRPI','XRPN','XRPZ','XSLL','XXI','XZO','YBTC','YETH','YICCU',
+  'YLD','YMAG','YMAX','YQQQ','YYY','ZKP','ZTR',
   ])],
   // LIST 4d: INDUSTRIAL — Industrials sector per Finviz classification.
   //   Real operating companies (aerospace & defense, airlines, electrical
@@ -845,22 +850,32 @@ function chunk(arr, n) {
   return out;
 }
 
+// Alpaca rejects an entire batch request with a 400 if ANY symbol in it is
+// malformed (confirmed in production via AAC-U) — a hyphen, space, or other
+// non-alphanumeric character kills the whole batch, not just that ticker.
+// Applied at every batch-request entry point below so a single bad ticker
+// in any universe can't take down an entire scan.
+function sanitizeTickerBatch(tickers) {
+  return tickers.filter(t => /^[A-Z0-9]+$/.test(t));
+}
+
 async function fetchSnapshots(tickers, onProgress) {
+  const clean = sanitizeTickerBatch(tickers);
   const results = {};
   let done = 0;
-  for (const batch of chunk(tickers, 100)) {
+  for (const batch of chunk(clean, 100)) {
     const data = await alpacaGet('/stocks/snapshots', { symbols: batch.join(','), feed:'iex' });
     Object.assign(results, data);
     done += batch.length;
-    if (onProgress) onProgress(done, tickers.length);
+    if (onProgress) onProgress(done, clean.length);
   }
   return results;
 }
 
-// Alpaca silently omits unrecognized symbols from snapshot results rather than
-// erroring, so an unresolved ticker just vanishes with no signal. This flags it
-// loudly (once per scan) for the handful of tickers we already know are at risk
-// — see UNVERIFIED_HYPHEN_SYMBOLS.
+// Malformed tickers (anything sanitizeTickerBatch() strips, e.g. the
+// UNVERIFIED_HYPHEN_SYMBOLS) never reach Alpaca at all now, so they can never
+// appear in `snapshots` — this flags that exclusion loudly (once per scan)
+// instead of the ticker just silently vanishing with no signal and no trace.
 function checkUnresolvedSymbols(requestedTickers, snapshots) {
   const requested = new Set(requestedTickers);
   const missing = UNVERIFIED_HYPHEN_SYMBOLS.filter(sym => requested.has(sym) && !snapshots[sym]);
@@ -870,8 +885,9 @@ function checkUnresolvedSymbols(requestedTickers, snapshots) {
 }
 
 async function fetchAHSnapshots(tickers) {
+  const clean = sanitizeTickerBatch(tickers);
   const results = {};
-  for (const batch of chunk(tickers, 100)) {
+  for (const batch of chunk(clean, 100)) {
     try {
       const data = await alpacaGet('/stocks/snapshots', { symbols: batch.join(','), feed:'sip' });
       Object.assign(results, data);
@@ -881,12 +897,13 @@ async function fetchAHSnapshots(tickers) {
 }
 
 async function fetchMultiBars(tickers, limit = 100) {
-  if (!tickers.length) return {};
+  const clean = sanitizeTickerBatch(tickers);
+  if (!clean.length) return {};
   const results = {};
   const start = (() => {
     const d = new Date(); d.setDate(d.getDate() - 180); return d.toISOString().split('T')[0];
   })();
-  for (const batch of chunk(tickers, 30)) {
+  for (const batch of chunk(clean, 30)) {
     try {
       const data = await alpacaGet('/stocks/bars', {
         symbols: batch.join(','), timeframe:'1Day', start, limit, sort:'asc', feed:'iex'
@@ -921,9 +938,10 @@ async function fetchHourlyBars(ticker) {
 }
 
 async function fetchNewsForTickers(tickers) {
-  if (!tickers.length) return [];
+  const clean = sanitizeTickerBatch(tickers);
+  if (!clean.length) return [];
   try {
-    const syms = tickers.slice(0, 50).join(',');
+    const syms = clean.slice(0, 50).join(',');
     const data = await alpacaGet('/news', { symbols: syms, limit: 50, sort:'desc' });
     return data.news || [];
   } catch(e) { return []; }
