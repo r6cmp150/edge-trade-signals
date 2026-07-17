@@ -1389,7 +1389,7 @@ function durBadgeClass(duration) {
   return duration === 'DAY' ? 'badge-day' : duration === '3-DAY' ? 'badge-swing' : 'badge-week';
 }
 function durBadgeText(duration) {
-  return duration === 'DAY' ? 'EXIT TODAY' : duration === '3-DAY' ? 'EST. 2-4 DAYS' : 'EST. 5-7 DAYS';
+  return duration === 'DAY' ? 'EXIT TODAY' : duration === '3-DAY' ? '2-4 DAYS' : '5-7 DAYS';
 }
 function durHoldLabel(duration) {
   return duration === 'DAY' ? 'exit today' : duration === '3-DAY' ? 'est. 2-4 day' : 'est. 5-7 day';
