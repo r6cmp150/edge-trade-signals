@@ -1,11 +1,11 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.6.0
+// EDGE Trade Signals — app.js  v1.7.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.6.0';
+const VERSION = 'v1.7.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 // Sum of every signal's max POSITIVE points in scoreStock() — Scoring Formula v2
@@ -1140,6 +1140,34 @@ function getMacroAdjustment(condition, category) {
   return MACRO_ADJUSTMENTS[condition]?.[category] ?? 0;
 }
 
+// Dynamic signal threshold:
+// Rule 1 — sector-specific: on a SECTOR_WEAKNESS_* day, raise the display
+// threshold to 50 for the category(ies) that condition targets; every other
+// category stays at the base 20. RETAIL is grouped with TECH under
+// SECTOR_WEAKNESS_TECH per spec ("Tech/Retail category stocks only").
+// HEALTHCARE is the existing Biotech proxy (see MACRO_ADJUSTMENTS above).
+// Rule 2 — broad: on RISK_OFF or GEOPOLITICAL, raise the threshold to 50 for
+// every category, no exceptions.
+// Rule 3 — every other condition (BROAD_RALLY, MOMENTUM_DAY, TECH_ROTATION_OUT,
+// CHOPPY, null) is a no-op and falls through to the base 20.
+// Evaluated once per scan against the single scan-wide category, not per
+// stock — see call site in runScreener().
+const BASE_SCORE_THRESHOLD = 20;
+const ELEVATED_SCORE_THRESHOLD = 50;
+const SECTOR_WEAKNESS_THRESHOLD_CATEGORIES = {
+  SECTOR_WEAKNESS_TECH: ['TECH', 'RETAIL'],
+  SECTOR_WEAKNESS_BIOTECH: ['HEALTHCARE'],
+  SECTOR_WEAKNESS_ENERGY: ['ENERGY'],
+};
+const BROAD_ELEVATED_CONDITIONS = ['RISK_OFF', 'GEOPOLITICAL'];
+
+function getDisplayThreshold(condition, category) {
+  if (BROAD_ELEVATED_CONDITIONS.includes(condition)) return ELEVATED_SCORE_THRESHOLD;
+  const affected = SECTOR_WEAKNESS_THRESHOLD_CATEGORIES[condition];
+  if (affected && affected.includes(category)) return ELEVATED_SCORE_THRESHOLD;
+  return BASE_SCORE_THRESHOLD;
+}
+
 // Step 4: display helpers. Which ETF(s) to quote in the Score Breakdown row,
 // per condition — mirrors the spec's own examples (GEOPOLITICAL: "SPY -1.8%,
 // XLE +2.1%"; BROAD_RALLY: "SPY +1.4%").
@@ -1177,11 +1205,36 @@ const MACRO_INTERPRETATIONS = {
   SECTOR_WEAKNESS_TECH: 'Sector-specific selling in tech, not a broad market event.',
 };
 
+// Sector display name for the elevated-threshold banner text (Rule 4) —
+// condition mapped to the plain-English sector it targets. Deliberately
+// independent of state.selectedUniverse: the banner describes what's
+// elevated system-wide, not whether the currently viewed universe happens
+// to be affected (matches the spec text verbatim, incl. "Other sectors
+// unaffected").
+const SECTOR_WEAKNESS_DISPLAY_NAME = {
+  SECTOR_WEAKNESS_TECH: 'Tech',
+  SECTOR_WEAKNESS_BIOTECH: 'Biotech',
+  SECTOR_WEAKNESS_ENERGY: 'Energy',
+};
+
 // Signals tab banner — omitted entirely on CHOPPY days per spec ("no clutter
-// on normal days").
+// on normal days"). Rule 4: mentions the elevated threshold on days it's
+// active (RISK_OFF/GEOPOLITICAL broad, or SECTOR_WEAKNESS_* sector-specific);
+// falls back to the original copy unchanged for conditions with no threshold
+// change (BROAD_RALLY, MOMENTUM_DAY, TECH_ROTATION_OUT).
 function buildMacroBanner() {
   const ctx = state.macroContext;
   if (!ctx || !ctx.condition || ctx.condition === 'CHOPPY') return '';
+
+  if (BROAD_ELEVATED_CONDITIONS.includes(ctx.condition)) {
+    return `<div class="macro-banner">⚠ <strong>${ctx.condition}</strong> — Only showing high-confidence signals across all sectors (score 50+) due to broad market conditions.</div>`;
+  }
+
+  const sector = SECTOR_WEAKNESS_DISPLAY_NAME[ctx.condition];
+  if (sector) {
+    return `<div class="macro-banner">⚠ <strong>${ctx.condition}</strong> — ${sector} sector weak today. Only showing high-confidence ${sector} signals (score 50+). Other sectors unaffected.</div>`;
+  }
+
   const text = ctx.explanation || MACRO_INTERPRETATIONS[ctx.condition] || '';
   return `<div class="macro-banner">📊 <strong>${ctx.condition}</strong> — ${text}</div>`;
 }
@@ -1703,10 +1756,14 @@ async function runScreener() {
 
     // 7. Score
     const category = state.selectedUniverse || 'OTHER';
+    const macroCondition = state.macroContext?.condition || null;
+    const displayThreshold = getDisplayThreshold(macroCondition, category);
     const scored = candidates.map(([ticker, snap]) => {
       const bars = allBars[ticker] || [];
-      return scoreStock(ticker, snap, bars, newsMap[ticker] || null, spyChangePct, category);
-    }).filter(s => s && s.score >= 20);
+      const s = scoreStock(ticker, snap, bars, newsMap[ticker] || null, spyChangePct, category);
+      if (s) s.thresholdAtBuy = displayThreshold;
+      return s;
+    }).filter(s => s && s.score >= displayThreshold);
 
     // 7. Apply under-$2 filter
     const minP2 = state.settings.includeUnder2 ? 0 : 2;
@@ -2834,6 +2891,7 @@ function confirmAddPortfolio(ticker) {
     rawAtrAtBuy:     sig?.atr        ?? null,
     trimmedAtrAtBuy: sig?.trimmedAtr ?? null,
     macroConditionAtBuy: sig?.macroCondition || null,
+    thresholdAtBuy: sig?.thresholdAtBuy ?? BASE_SCORE_THRESHOLD,
     peakPrice:   price,
     peakPriceDate: date,
     momentumProtectionActivated: false,
@@ -3294,6 +3352,7 @@ function confirmMarkSold(posId) {
     rawAtrAtBuy:     pos.rawAtrAtBuy     ?? null,
     trimmedAtrAtBuy: pos.trimmedAtrAtBuy ?? null,
     macroConditionAtBuy: pos.macroConditionAtBuy || null,
+    thresholdAtBuy: pos.thresholdAtBuy ?? BASE_SCORE_THRESHOLD,
     duration: pos.duration,
     priceRange: salePrice <= 3 ? '$1–$3' : salePrice <= 9 ? '$4–$9' : '$10–$20',
     sellWarningAtSale: currentWarn,
@@ -3480,6 +3539,12 @@ function generateClaudeReport() {
     const t = sold.filter(s => (s.macroConditionAtBuy||'').startsWith('SECTOR_WEAKNESS'));
     const tw = t.filter(s => s.pnlPct > 0);
     return `  ${label}: ${t.length} trades | ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}% win rate | avg outcome ${t.length?avg(t,s=>s.pnlPct).toFixed(1):'—'}%`;
+  };
+
+  const thresholdBucket = (predicate, label) => {
+    const t = sold.filter(predicate);
+    const tw = t.filter(s => s.pnlPct > 0);
+    return `  ${label} ${t.length} | win rate ${t.length?((tw.length/t.length*100).toFixed(0)):'—'}%`;
   };
 
   const momentumActivatedTrades = sold.filter(s => s.momentumProtectionActivated);
@@ -3671,6 +3736,10 @@ ${macroCondStats('BROAD_RALLY',       'BROAD_RALLY:         ')}
 ${macroCondStats('MOMENTUM_DAY',      'MOMENTUM_DAY:        ')}
 ${macroSectorWeaknessStats(          'SECTOR_WEAKNESS_*:   ')}
 ${macroCondStats('CHOPPY',            'CHOPPY:              ')}
+
+Threshold at time of purchase:
+${thresholdBucket(s => (s.thresholdAtBuy ?? BASE_SCORE_THRESHOLD) >= ELEVATED_SCORE_THRESHOLD, 'Trades bought under elevated threshold (50+):')}
+${thresholdBucket(s => (s.thresholdAtBuy ?? BASE_SCORE_THRESHOLD) < ELEVATED_SCORE_THRESHOLD, 'Trades bought under normal threshold (20+):  ')}
 
 === MOMENTUM PROTECTION ===
 
