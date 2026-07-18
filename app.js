@@ -1,11 +1,11 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.7.0
+// EDGE Trade Signals — app.js  v1.8.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.7.0';
+const VERSION = 'v1.8.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 // Sum of every signal's max POSITIVE points in scoreStock() — Scoring Formula v2
@@ -1553,6 +1553,7 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0, category = n
   // available (~100-125 trading days from the screener fetch), not a true 252-day
   // 52-week window — treated as an approximation per product decision.
   const high52 = Math.max(...sorted.map(b => b.h));
+  const low52 = Math.min(...sorted.map(b => b.l));
   const last10ExclToday = sorted.slice(-11, -1);
   const swingHigh10 = last10ExclToday.length ? Math.max(...last10ExclToday.map(b => b.h)) : null;
   const { entry, target, stop, cappedBy } = calcEntryTargetStop(price, trimmedAtr, duration, { high52, swingHigh10, ma20 });
@@ -1605,6 +1606,18 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0, category = n
     }
   }
   const volBuildNearMiss = !volBuild ? { consecutiveDays: consRisingVolDays, volRatio } : null;
+
+  // CATALYST_SETUP detection (Phase 1 — informational only; does not affect
+  // score, signal, target/stop, or risk). All three must hold: price near its
+  // 52-week low (same-window approximation as high52 above, per product
+  // decision — no extra fetch), RSI rising off oversold but still <55, and
+  // volume building for 2+ consecutive days (reuses consRisingVolDays from
+  // VOL_BUILD above, not rebuilt).
+  const near52wLow = low52 > 0 && price <= low52 * 1.20;
+  const rsi3ago = closes.length >= 18 ? calcRSI(closes.slice(0, -3)) : rsi;
+  const risingFromOversold = rsi > rsi3ago && rsi < 55;
+  const volBuilding2Days = consRisingVolDays >= 2;
+  const catalystSetup = near52wLow && risingFromOversold && volBuilding2Days;
 
   // Mean Reversion: price 8–15% below 20MA, RSI < 45 and turning up (0–20)
   let meanReversion = false;
@@ -1675,6 +1688,7 @@ function scoreStock(ticker, snap, bars, newsItem, spyChangePct = 0, category = n
     volBuildNearMiss, meanReversionNearMiss,
     consUpDays, consUpPts, spyChange: spyChangePct, rsVsSPY, relStrengthPts,
     macroCondition, macroAdjustment, macroChanges, category,
+    catalystSetup,
     bars: sorted
   };
 }
@@ -2274,6 +2288,19 @@ function computeScoreBreakdown(s) {
       pts: macroPts,
       fired: macroPts > 0,
       neutral: macroPts === 0,
+    });
+  }
+
+  // CATALYST_SETUP (Phase 1 — informational only, 0 pts, neutral display;
+  // does not contribute to score). Only rendered when detected, same
+  // conditional-push pattern as the macro row above.
+  if (s.catalystSetup) {
+    rows.push({
+      key: 'catalyst', short: 'catalyst',
+      label: `🔍 Catalyst setup profile detected`,
+      pts: 0,
+      fired: false,
+      neutral: true,
     });
   }
 
@@ -2892,6 +2919,7 @@ function confirmAddPortfolio(ticker) {
     trimmedAtrAtBuy: sig?.trimmedAtr ?? null,
     macroConditionAtBuy: sig?.macroCondition || null,
     thresholdAtBuy: sig?.thresholdAtBuy ?? BASE_SCORE_THRESHOLD,
+    catalystSetup: sig?.catalystSetup || false,
     peakPrice:   price,
     peakPriceDate: date,
     momentumProtectionActivated: false,
@@ -3353,6 +3381,7 @@ function confirmMarkSold(posId) {
     trimmedAtrAtBuy: pos.trimmedAtrAtBuy ?? null,
     macroConditionAtBuy: pos.macroConditionAtBuy || null,
     thresholdAtBuy: pos.thresholdAtBuy ?? BASE_SCORE_THRESHOLD,
+    catalystSetup: pos.catalystSetup || false,
     duration: pos.duration,
     priceRange: salePrice <= 3 ? '$1–$3' : salePrice <= 9 ? '$4–$9' : '$10–$20',
     sellWarningAtSale: currentWarn,
@@ -3748,6 +3777,25 @@ Avg outcome on those trades:                    ${momentumActivatedTrades.length
 Trades where trailing stop triggered exit:      ${momentumTrailingTrades.length} | avg outcome ${momentumTrailingTrades.length ? avg(momentumTrailingTrades, s=>s.pnlPct).toFixed(1) : '—'}%
 Trades where RSI would have triggered early:    ${momentumRsiEarlyTrades.length} | avg gain at that
   point ${momentumRsiEarlyTrades.length ? avg(momentumRsiEarlyTrades, s=>s.rsiSuspendedAtGainPct).toFixed(1) : '—'}% (shows how much would have been left on the table)
+
+=== CATALYST SETUP ANALYSIS ===
+
+Trades where CATALYST_SETUP flag was active at purchase:
+${(()=>{
+  const flagged = sold.filter(s => s.catalystSetup);
+  const nonFlagged = sold.filter(s => !s.catalystSetup);
+  if (!flagged.length) return `  Total flagged trades: 0
+  No completed trades with the CATALYST_SETUP flag yet.`;
+  const flaggedW = flagged.filter(s => s.pnlPct > 0);
+  const best = flagged.reduce((a,b) => b.pnlPct > a.pnlPct ? b : a);
+  const worst = flagged.reduce((a,b) => b.pnlPct < a.pnlPct ? b : a);
+  return `  Total flagged trades: ${flagged.length}
+  Win rate on flagged trades: ${(flaggedW.length/flagged.length*100).toFixed(0)}%
+  Avg outcome on flagged trades: ${avg(flagged, s=>s.pnlPct).toFixed(1)}%
+  Avg outcome on non-flagged trades: ${nonFlagged.length ? avg(nonFlagged, s=>s.pnlPct).toFixed(1) : '—'}%
+  Best flagged trade: ${best.ticker} ${best.pnlPct >= 0 ? '+' : ''}${best.pnlPct.toFixed(1)}%
+  Worst flagged trade: ${worst.ticker} ${worst.pnlPct >= 0 ? '+' : ''}${worst.pnlPct.toFixed(1)}%`;
+})()}
 
 === FULL TRADE HISTORY ===
 
