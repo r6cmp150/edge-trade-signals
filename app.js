@@ -1,11 +1,11 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.9.1
+// EDGE Trade Signals — app.js  v1.10.0
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.9.1';
+const VERSION = 'v1.10.0';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 // Sum of every signal's max POSITIVE points in scoreStock() — Scoring Formula v2
@@ -937,6 +937,21 @@ async function fetchMinuteBars(ticker) {
   try {
     const data = await alpacaGet(`/stocks/${ticker}/bars`, {
       timeframe: '1Min', start, limit: 2000, sort: 'asc', feed: 'iex'
+    });
+    return data.bars || [];
+  } catch(e) { return []; }
+}
+
+// 1-hour bars for the "1 Week"/"1 Month" chart ranges — same idea as
+// fetchMinuteBars, one level coarser. 45-day lookback comfortably covers a
+// 30-day range plus weekend/holiday slack; renderChartRange filters this
+// single fetch down to the 7-day or 30-day window as needed.
+async function fetchHourlyBars(ticker) {
+  const d = new Date(); d.setDate(d.getDate() - 45);
+  const start = d.toISOString().split('T')[0];
+  try {
+    const data = await alpacaGet(`/stocks/${ticker}/bars`, {
+      timeframe: '1Hour', start, limit: 500, sort: 'asc', feed: 'iex'
     });
     return data.bars || [];
   } catch(e) { return []; }
@@ -2440,8 +2455,8 @@ function buildModalNewsSection(ticker) {
 // ── 13. STOCK DETAIL MODAL ────────────────────────────────────────
 
 let _priceChart = null;
-let _chartBarsDaily   = [];
 let _chartBarsMinute  = [];
+let _chartBarsHourly  = [];
 let _chartCurrentPrice = 0;
 let _modalStock = null;
 
@@ -2464,10 +2479,10 @@ async function openStockModal(ticker) {
   `);
 
   try {
-    const [bars, minuteBars] = await Promise.all([fetchSingleBars(ticker, 300), fetchMinuteBars(ticker)]);
+    const [bars, minuteBars, hourlyBars] = await Promise.all([fetchSingleBars(ticker, 300), fetchMinuteBars(ticker), fetchHourlyBars(ticker)]);
     const sorted = [...bars].sort((a,b) => new Date(a.t) - new Date(b.t));
-    _chartBarsDaily  = sorted;
     _chartBarsMinute = [...minuteBars].sort((a,b) => new Date(a.t) - new Date(b.t));
+    _chartBarsHourly = [...hourlyBars].sort((a,b) => new Date(a.t) - new Date(b.t));
     const closes = sorted.map(b => b.c);
     const vols   = sorted.map(b => b.v);
 
@@ -2706,9 +2721,9 @@ function renderChartRange(range) {
     btn.classList.toggle('active', btn.dataset.range === range);
   });
 
-  let bars, isIntraday = false;
+  let bars, granularity = 'hourly';
   if (range === '1D') {
-    isIntraday = true;
+    granularity = 'minute';
     // Today's minute bars only. If today has none yet (pre-market, or the
     // feed's latest bar is from a prior session on a weekend/holiday), fall
     // back to whichever calendar day is most recent in the already-fetched
@@ -2721,33 +2736,34 @@ function renderChartRange(range) {
     }
   } else if (range === '1W') {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 7);
-    bars = _chartBarsDaily.filter(b => new Date(b.t) >= cutoff);
+    bars = _chartBarsHourly.filter(b => new Date(b.t) >= cutoff);
   } else if (range === '1M') {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
-    bars = _chartBarsDaily.filter(b => new Date(b.t) >= cutoff);
+    bars = _chartBarsHourly.filter(b => new Date(b.t) >= cutoff);
   } else {
     bars = [];
   }
 
-  renderPriceChart(bars, _chartCurrentPrice, isIntraday);
+  renderPriceChart(bars, _chartCurrentPrice, granularity);
 }
 
-function renderPriceChart(bars, currentPrice, isIntraday = false) {
+function renderPriceChart(bars, currentPrice, granularity = 'hourly') {
   const canvas = document.getElementById('price-chart');
   if (!canvas) return;
   if (_priceChart) { _priceChart.destroy(); _priceChart = null; }
 
-  // Intraday (1-min bars, single day): time-of-day ticks on the hour, matching
-  // Robinhood's intraday tick style. Multi-day (1W/1M, daily bars): month ticks.
+  // 'minute' (1D, 1-min bars): time-of-day ticks on the hour, matching
+  // Robinhood's intraday tick style. 'hourly' (1W/1M, 1-hour bars): date
+  // ticks whenever the calendar day changes.
   const labels = bars.map((b, i) => {
     const d = new Date(b.t);
     const prev = i > 0 ? new Date(bars[i-1].t) : null;
-    if (isIntraday) {
+    if (granularity === 'minute') {
       return (!prev || d.getHours() !== prev.getHours())
         ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
     }
-    return (!prev || d.getMonth() !== prev.getMonth())
-      ? d.toLocaleDateString('en-US', { month: 'short' }) : '';
+    return (!prev || d.getDate() !== prev.getDate())
+      ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
   });
 
   _priceChart = new Chart(canvas.getContext('2d'), {
