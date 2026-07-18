@@ -1,11 +1,11 @@
 'use strict';
 // ================================================================
-// EDGE Trade Signals — app.js  v1.9.0
+// EDGE Trade Signals — app.js  v1.9.1
 // ================================================================
 
 // ── 1. CONSTANTS ────────────────────────────────────────────────
 
-const VERSION = 'v1.9.0';
+const VERSION = 'v1.9.1';
 const ALPACA_BASE = 'https://data.alpaca.markets/v2';
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 // Sum of every signal's max POSITIVE points in scoreStock() — Scoring Formula v2
@@ -889,7 +889,7 @@ async function fetchAHSnapshots(tickers) {
   const results = {};
   for (const batch of chunk(clean, 100)) {
     try {
-      const data = await alpacaGet('/stocks/snapshots', { symbols: batch.join(','), feed:'sip' });
+      const data = await alpacaGet('/stocks/snapshots', { symbols: batch.join(','), feed:'iex' });
       Object.assign(results, data);
     } catch(e) { console.warn('AH snapshot error', e.message); }
   }
