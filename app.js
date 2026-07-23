@@ -2996,7 +2996,19 @@ async function renderPortfolioTab() {
   let totalCost = 0, totalValue = 0;
   let html = '';
 
-  state.portfolio.forEach(p => {
+  // Sort by urgency: how much of the position's intended hold duration has
+  // elapsed. Ratio >= 1.0 (at/past max duration) naturally sorts to the top
+  // since it's just the largest values in a descending sort.
+  const maxHoldDays = { DAY: 1, '3-DAY': 4, WEEK: 7 };
+  const sortedPortfolio = [...state.portfolio].sort((a, b) => {
+    const daysHeldA = Math.floor((Date.now() - new Date(a.buyDate).getTime()) / 86400000);
+    const daysHeldB = Math.floor((Date.now() - new Date(b.buyDate).getTime()) / 86400000);
+    const ratioA = daysHeldA / maxHoldDays[a.duration];
+    const ratioB = daysHeldB / maxHoldDays[b.duration];
+    return ratioB - ratioA;
+  });
+
+  sortedPortfolio.forEach(p => {
     const snap = snapshots[p.ticker];
     const bars = (allBars[p.ticker] || []).sort((a,b) => new Date(a.t)-new Date(b.t));
     const closes = bars.map(b => b.c);
@@ -3155,13 +3167,12 @@ function calcSellWarning(position, currentPrice, rsi, atr) {
   if (inProtection && currentPrice <= position.peakPrice * 0.80) return 'SELL_NOW';
 
   // SELL SOON conditions
-  // Note: target*1.05 (more than 5% past target) is already covered by the 0.97
-  // threshold below — any price above 105% of target is also above 97% of it.
+  // More than 5% past original target, regardless of other conditions.
   // Suspended while protected (Rule 3).
-  if (!inProtection) {
-    const toTarget = currentPrice >= position.target * 0.97;
-    if (toTarget) return 'SELL_SOON';
-  }
+  if (!inProtection && currentPrice > position.target * 1.05) return 'SELL_SOON';
+
+  // Within 3% of target, approaching from below. Suspended while protected.
+  if (!inProtection && currentPrice >= position.target * 0.97 && currentPrice < position.target) return 'SELL_SOON';
   if (!inProtection && rsi >= 72) return 'SELL_SOON';
   if (position.duration === '3-DAY' && days >= 4) return 'SELL_SOON';
   if (position.duration === 'WEEK' && days >= 7) return 'SELL_SOON';
@@ -3260,11 +3271,8 @@ function getPortfolioTier(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
   // Suspended while protected (Rule 3).
   if (!inProtection && currentPrice > p.target * 1.05) return 'SELL_SOON';
 
-  // SELL SOON — within 5% of target (approaching from below). Suspended while protected.
-  if (!inProtection) {
-    const distToTarget = ((p.target - currentPrice) / p.target) * 100;
-    if (distToTarget >= 0 && distToTarget <= 5) return 'SELL_SOON';
-  }
+  // SELL SOON — within 3% of target, approaching from below. Suspended while protected.
+  if (!inProtection && currentPrice >= p.target * 0.97 && currentPrice < p.target) return 'SELL_SOON';
 
   // Trailing stop (Rule 3): dropped 15%+ from peak while protected
   if (inProtection && currentPrice <= p.peakPrice * 0.85) return 'SELL_SOON';
@@ -3283,6 +3291,10 @@ function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
   // Must mirror getPortfolioTier's inProtection gating exactly, or this reason-text
   // selection can misattribute a SELL_NOW to RSI when RSI is no longer what's driving it.
   const inProtection = !!p.momentumProtectionActivated;
+  // Trigger logic above stays on p.target (original) — only the displayed number
+  // switches to the live target once it has drifted enough to show "⚠ Shifted".
+  const targetDriftPct = p.liveTarget ? ((p.liveTarget - p.target) / p.target) * 100 : 0;
+  const displayTarget = (p.liveTarget && Math.abs(targetDriftPct) > 5) ? p.liveTarget : p.target;
 
   if (tier === 'SELL_NOW') {
     if (currentPrice <= p.stop)
@@ -3309,8 +3321,8 @@ function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
       return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Dropped ${dropPct.toFixed(1)}% from peak $${p.peakPrice.toFixed(2)} — trailing stop</div>`;
     }
     if (!inProtection && currentPrice > p.target)
-      return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — ${(-distToTarget).toFixed(1)}% past target $${p.target.toFixed(2)} — exceeded goal</div>`;
-    return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Target $${p.target.toFixed(2)} — you are ${distToTarget.toFixed(1)}% away</div>`;
+      return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — ${(-distToTarget).toFixed(1)}% past target $${displayTarget.toFixed(2)} — exceeded goal</div>`;
+    return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Target $${displayTarget.toFixed(2)} — you are ${distToTarget.toFixed(1)}% away</div>`;
   }
 
   if (tier === 'HOLD_TRACK')
