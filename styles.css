@@ -777,14 +777,12 @@ a { color: var(--blue); }
   margin-bottom: 10px;
   box-sizing: border-box;
   text-align: center;
-  border-left: 3px solid transparent;
+  background: var(--badge-neutral-bg);
+  border: 1px solid var(--border);
+  color: var(--badge-neutral-label);
 }
-.port-sell-now    { background: rgba(255,77,109,0.18);  color: var(--red);    border-left: 3px solid var(--red);    font-size: 16px; padding: 14px 12px; }
-.port-sell-soon   { background: rgba(255,209,102,0.15); color: var(--yellow); border-left: 3px solid var(--yellow); }
-.port-hold-track  { background: rgba(0,255,136,0.15);   color: var(--green);  border-left: 3px solid var(--green); }
-.port-hold-recover{ background: rgba(0,255,136,0.15);   color: var(--green);  border-left: 3px solid var(--green); }
-.port-danger      { background: rgba(255,77,109,0.15);  color: var(--red);    border-left: 3px solid var(--red);
-                    animation: port-flash 1.5s ease-in-out infinite; }
+.port-sell-now    { font-size: 16px; padding: 14px 12px; }
+.port-danger      { animation: port-flash 1.5s ease-in-out infinite; }
 
 @keyframes port-flash {
   0%, 100% { opacity: 1; }

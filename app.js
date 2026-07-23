@@ -3342,49 +3342,23 @@ function getPortfolioTier(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
 
 function buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days) {
   const tier = getPortfolioTier(p, currentPrice, rsi, pnlDollar, pnlPct, days);
-  const distToStop = ((currentPrice - p.stop) / currentPrice) * 100;
-  const distToTarget = ((p.target - currentPrice) / p.target) * 100;
-  // Must mirror getPortfolioTier's inProtection gating exactly, or this reason-text
-  // selection can misattribute a SELL_NOW to RSI when RSI is no longer what's driving it.
-  const inProtection = !!p.momentumProtectionActivated;
-  // Trigger logic above stays on p.target (original) — only the displayed number
-  // switches to the live target once it has drifted enough to show "⚠ Shifted".
-  const targetDriftPct = p.liveTarget ? ((p.liveTarget - p.target) / p.target) * 100 : 0;
-  const displayTarget = (p.liveTarget && Math.abs(targetDriftPct) > 5) ? p.liveTarget : p.target;
 
-  if (tier === 'SELL_NOW') {
-    if (currentPrice <= p.stop)
-      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Price hit stop-loss</div>`;
-    if (!inProtection && rsi > 78)
-      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — RSI ${rsi.toFixed(0)} — extremely overbought</div>`;
-    if (pnlPct <= -8)
-      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Down 8%+ from purchase</div>`;
-    if (!inProtection && currentPrice > p.target * 1.10)
-      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — ${(-distToTarget).toFixed(1)}% past target $${p.target.toFixed(2)} — take the profit</div>`;
-    if (inProtection && currentPrice <= p.peakPrice * 0.80) {
-      const dropPct = ((p.peakPrice - currentPrice) / p.peakPrice) * 100;
-      return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Dropped ${dropPct.toFixed(1)}% from peak $${p.peakPrice.toFixed(2)} — trailing stop hit</div>`;
-    }
-    return `<div class="port-banner port-sell-now"><strong>🔴 SELL NOW</strong> — Day trade — exit before close</div>`;
-  }
+  const bannerLabel = {
+    SELL_NOW:     'SELL NOW',
+    DANGER:       'DANGER — NEAR STOP-LOSS',
+    SELL_SOON:    'SELL SOON',
+    HOLD_TRACK:   'HOLD — ON TRACK',
+    HOLD_RECOVER: 'HOLD — RECOVERING',
+  }[tier];
+  const bannerCls = {
+    SELL_NOW:     'port-sell-now',
+    DANGER:       'port-danger',
+    SELL_SOON:    'port-sell-soon',
+    HOLD_TRACK:   'port-hold-track',
+    HOLD_RECOVER: 'port-hold-recover',
+  }[tier];
 
-  if (tier === 'DANGER')
-    return `<div class="port-banner port-danger"><strong>⚠️ DANGER — NEAR STOP-LOSS</strong> — Stop-loss at $${p.stop.toFixed(2)} — price is ${distToStop.toFixed(1)}% away. Consider exiting.</div>`;
-
-  if (tier === 'SELL_SOON') {
-    if (inProtection && currentPrice <= p.peakPrice * 0.85) {
-      const dropPct = ((p.peakPrice - currentPrice) / p.peakPrice) * 100;
-      return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Dropped ${dropPct.toFixed(1)}% from peak $${p.peakPrice.toFixed(2)} — trailing stop</div>`;
-    }
-    if (!inProtection && currentPrice > p.target)
-      return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — ${(-distToTarget).toFixed(1)}% past target $${displayTarget.toFixed(2)} — exceeded goal</div>`;
-    return `<div class="port-banner port-sell-soon"><strong>🟠 SELL SOON — TAKE PROFITS</strong> — Target $${displayTarget.toFixed(2)} — you are ${distToTarget.toFixed(1)}% away</div>`;
-  }
-
-  if (tier === 'HOLD_TRACK')
-    return `<div class="port-banner port-hold-track"><strong>✅ HOLD — ON TRACK</strong> — Up $${pnlDollar.toFixed(2)} (+${pnlPct.toFixed(1)}%) — holding strong</div>`;
-
-  return `<div class="port-banner port-hold-recover"><strong>🟡 HOLD — RECOVERING</strong> — Down $${Math.abs(pnlDollar).toFixed(2)} (-${Math.abs(pnlPct).toFixed(1)}%) — stop-loss at $${p.stop.toFixed(2)}</div>`;
+  return `<div class="port-banner ${bannerCls}"><strong>${bannerLabel}</strong></div>`;
 }
 
 // ── 17. MARK AS SOLD ──────────────────────────────────────────────
