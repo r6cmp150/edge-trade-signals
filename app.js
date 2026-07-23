@@ -1364,10 +1364,11 @@ Position status:
   Original target: $${pos.target.toFixed(2)}
   Live target: $${stock.target.toFixed(2)}
 
-Answer these three questions:
+Answer these ${pnlDollar < 0 ? 'four' : 'three'} questions:
 1. HOLD or SELL — your independent recommendation in one sentence, based only on the data above. Do not reference any app warning or system recommendation.
 2. What the price action and indicators are telling you right now in 2-3 sentences, factoring in the macro condition.
-3. Probability this stock reaches the live target before hitting the stop-loss, as a percentage with one sentence explaining what would need to happen.
+3. Probability this stock reaches the live target before hitting the stop-loss, as a percentage with one sentence explaining what would need to happen.${pnlDollar < 0 ? `
+4. Temporary or structural loss — in one sentence, does the current price action suggest this is a short-term pullback that may recover, or a structural breakdown where further downside is likely? Base this on RSI direction, volume trend, distance from recent low, and macro condition.` : ''}
 
 Be direct. No disclaimers. Base everything strictly on the data provided.`;
   } else {
@@ -1385,13 +1386,13 @@ Be direct. No disclaimers. Base everything strictly on the data provided.`;
 
 function parseAIAnswers(text) {
   const lines = text.split('\n');
-  const answers = ['', '', ''];
+  const answers = ['', '', '', ''];
   let current = -1;
 
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
-    const m = line.match(/^\**\s*([1-3])[\.\)]\s*(.*)$/);
+    const m = line.match(/^\**\s*([1-4])[\.\)]\s*(.*)$/);
     if (m) {
       current = parseInt(m[1], 10) - 1;
       answers[current] = m[2];
