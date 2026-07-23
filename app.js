@@ -3051,26 +3051,25 @@ async function renderPortfolioTab() {
     const pnlDollar = value - cost;
     const pnlPct    = ((currentPrice - p.buyPrice) / p.buyPrice * 100);
     const pnlCls    = pnlDollar >= 0 ? 'pos' : 'neg';
-    const cardCls   = Math.abs(pnlPct) < 1 ? 'breakeven' : pnlDollar >= 0 ? 'in-profit' : 'in-loss';
 
     const days = Math.floor((Date.now() - new Date(p.buyDate).getTime()) / 86400000);
     const durLabel = durHoldLabel(p.duration);
-    const durBadge = durBadgeClass(p.duration);
 
     const portBanner   = buildPortfolioBanner(p, currentPrice, rsi, pnlDollar, pnlPct, days);
     const fridayFlag   = buildFridayFlag(p, currentPrice, pnlPct);
     const priceDiffPct = ((currentPrice - p.buyPrice) / p.buyPrice) * 100;
-    const priceTrackCls = Math.abs(priceDiffPct) < 1 ? 'pf-track-flat' : priceDiffPct > 0 ? 'pf-track-up' : 'pf-track-down';
+    const nowCls = Math.abs(priceDiffPct) < 1 ? 'pf-now-flat' : priceDiffPct > 0 ? 'pf-now-up' : 'pf-now-down';
+    const priceBarCls = pnlDollar >= 0 ? 'pf-bar-profit' : 'pf-bar-loss';
 
+    // Display-only target (sell warnings keep using p.target) — same >5% drift
+    // threshold used for the card's "⚠ Shifted" note and the SELL SOON banner.
     const targetDriftPct = liveTarget ? ((liveTarget - p.target) / p.target) * 100 : 0;
-    const targetDisplay = (liveTarget && Math.abs(targetDriftPct) > 5)
-      ? `Original target: $${p.target.toFixed(2)} → Live target: $${liveTarget.toFixed(2)} <span class="pf-shifted">⚠ Shifted</span>`
-      : `Target $${p.target.toFixed(2)}`;
+    const priceBarTarget = (liveTarget && Math.abs(targetDriftPct) > 5) ? liveTarget : p.target;
 
     // Rule 4: trailing stop recalculated from peakPrice every refresh, same threshold
     // as the SELL_SOON trailing check in getPortfolioTier/calcSellWarning.
     const momentumBadge = p.momentumProtectionActivated
-      ? `<div class="pf-momentum">🚀 Momentum Protection active — trailing stop $${(p.peakPrice * 0.85).toFixed(2)}</div>`
+      ? `<div class="pf-momentum">🚀 Momentum protection active — trailing stop $${(p.peakPrice * 0.85).toFixed(2)}</div>`
       : '';
 
     // Build AH row for portfolio card
@@ -3095,35 +3094,92 @@ async function renderPortfolioTab() {
       }
     }
 
-    html += `<div class="portfolio-card ${cardCls}">
+    // Purchased-on date, formatted MM / DD / YYYY (buyDate is stored as an
+    // ISO yyyy-mm-dd string from the <input type="date"> in Add to Portfolio).
+    const [buyY, buyM, buyD] = p.buyDate.split('-');
+    const purchasedOnDisplay = `${buyM} / ${buyD} / ${buyY}`;
+
+    // Score at purchase — same STRONG BUY/SOFT BUY/WATCH thresholds as the live
+    // scoring formula (scoreStock), applied to the score snapshotted at buy time.
+    const scoreBuyLabel = p.scoreAtBuy >= 80 ? 'STRONG BUY' : p.scoreAtBuy >= 50 ? 'SOFT BUY' : 'WATCH';
+    const scoreBuyCls   = p.scoreAtBuy >= 80 ? 'pf-score-green' : 'pf-score-yellow';
+
+    // Score now — only available if this ticker is still present in the most
+    // recent Signals scan (state.signals); there's no fresh re-score without
+    // rerunning that scan, so otherwise show a placeholder.
+    const liveSignal = state.signals.find(s => s.ticker === p.ticker);
+    const scoreNowDisplay = liveSignal
+      ? `${liveSignal.score} <span class="pf-score-label ${liveSignal.score >= 80 ? 'pf-score-green' : 'pf-score-yellow'}">${liveSignal.signal}</span>`
+      : `<span class="pf-score-na">—</span>`;
+
+    // Duration urgency — same maxHoldDays map used for the card sort order above.
+    const maxHold = maxHoldDays[p.duration];
+    const daysLeft = Math.max(0, maxHold - days);
+    const durationPct = Math.min(100, (days / maxHold) * 100);
+    const durationCls = daysLeft <= 0 ? 'pf-dur-red' : daysLeft === 1 ? 'pf-dur-orange' : 'pf-dur-blue';
+
+    html += `<div class="portfolio-card">
       ${portBanner}
       ${fridayFlag}
-      <div class="pf-top">
+      <div class="pf-header">
         <div>
-          <div style="display:flex;align-items:center;gap:6px">
-            <span class="ticker-sym">${p.ticker}</span>
-            <span class="badge ${durBadge}">${durBadgeText(p.duration)}</span>
-          </div>
-          <div class="company-name mt4">${p.company}</div>
-          <div class="pf-meta">${p.shares} shares · Day ${days+1} of ${durLabel} trade (est.)</div>
-          <div class="pf-meta">Bought ${p.buyDate}</div>
+          <div class="pf-ticker">${p.ticker}</div>
+          <div class="pf-company">${p.company}</div>
         </div>
-        <div style="text-align:right">
-          <div class="pf-pnl ${pnlCls}" style="font-size:15px">${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)}</div>
-          <div class="pf-pnl ${pnlCls}" style="font-size:13px">${pnlDollar>=0?'▲':'▼'}${Math.abs(pnlPct).toFixed(1)}%</div>
+        <div class="pf-header-pnl">
+          <div class="pf-pnl-dollar ${pnlCls}">${pnlDollar>=0?'+':''}$${pnlDollar.toFixed(2)}</div>
+          <div class="pf-pnl-pct ${pnlCls}">${pnlDollar>=0?'▲':'▼'}${Math.abs(pnlPct).toFixed(1)}%</div>
         </div>
-      </div>
-      <div class="pf-price-track ${priceTrackCls}">
-        Bought: $${p.buyPrice.toFixed(2)} → Now: $${currentPrice.toFixed(2)}
       </div>
       ${pfAHHtml}
-      ${momentumBadge}
-      <div class="card-sub">
-        ${targetDisplay} · Stop $${p.stop.toFixed(2)} · RSI ${rsi.toFixed(0)}
+      <div class="pf-price-bar ${priceBarCls}">
+        <div class="pf-price-cell">
+          <div class="pf-price-label">Bought</div>
+          <div class="pf-price-val pf-muted">$${p.buyPrice.toFixed(2)}</div>
+        </div>
+        <div class="pf-price-cell">
+          <div class="pf-price-label">Now</div>
+          <div class="pf-price-val ${nowCls}">$${currentPrice.toFixed(2)}</div>
+        </div>
+        <div class="pf-price-divider"></div>
+        <div class="pf-price-cell">
+          <div class="pf-price-label">Target</div>
+          <div class="pf-price-val pf-yellow">$${priceBarTarget.toFixed(2)}</div>
+        </div>
+        <div class="pf-price-cell">
+          <div class="pf-price-label">Stop</div>
+          <div class="pf-price-val pf-red">$${p.stop.toFixed(2)}</div>
+        </div>
       </div>
+      <div class="pf-grid">
+        <div class="pf-grid-cell">
+          <div class="pf-grid-label">Purchased On</div>
+          <div class="pf-grid-val">${purchasedOnDisplay}</div>
+        </div>
+        <div class="pf-grid-cell">
+          <div class="pf-grid-label">Total Investment</div>
+          <div class="pf-grid-val">${p.shares} shares | $${cost.toFixed(2)}</div>
+        </div>
+        <div class="pf-grid-cell">
+          <div class="pf-grid-label">Score at Purchase</div>
+          <div class="pf-grid-val">${p.scoreAtBuy} <span class="pf-score-label ${scoreBuyCls}">${scoreBuyLabel}</span></div>
+        </div>
+        <div class="pf-grid-cell">
+          <div class="pf-grid-label">Score Now</div>
+          <div class="pf-grid-val">${scoreNowDisplay}</div>
+        </div>
+      </div>
+      <div class="pf-duration">
+        <div class="pf-duration-row">
+          <span>Day ${days+1} of ${durLabel} trade</span>
+          <span class="${durationCls}">${daysLeft} days left</span>
+        </div>
+        <div class="pf-duration-track"><div class="pf-duration-fill ${durationCls}" style="width:${durationPct}%"></div></div>
+      </div>
+      ${momentumBadge}
       <div class="pf-actions">
-        <button class="btn btn-danger btn-sm" onclick="openMarkSoldModal('${p.id}', ${currentPrice})">Mark as Sold</button>
-        <button class="btn btn-ghost btn-sm" onclick="openStockModal('${p.ticker}')">View Signal</button>
+        <button class="btn btn-danger" onclick="openMarkSoldModal('${p.id}', ${currentPrice})">Mark as sold</button>
+        <button class="btn btn-ghost" onclick="openStockModal('${p.ticker}')">View signal</button>
       </div>
     </div>`;
   });

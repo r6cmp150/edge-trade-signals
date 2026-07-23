@@ -462,7 +462,6 @@ a { color: var(--blue); }
 .level-stop   { color: var(--red); }
 .target-capped-note { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 2px; }
 .card-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
-.pf-shifted { color: var(--yellow); font-weight: 700; }
 .card-news {
   font-size: 11px;
   color: var(--text-dim);
@@ -778,12 +777,13 @@ a { color: var(--blue); }
   margin-bottom: 10px;
   box-sizing: border-box;
   text-align: center;
+  border-left: 3px solid transparent;
 }
-.port-sell-now    { background: rgba(255,77,109,0.2);   color: var(--red);    border: 2px solid rgba(255,77,109,0.7); font-size: 16px; padding: 14px 12px; }
-.port-sell-soon   { background: rgba(255,150,50,0.15);  color: #ff9632;       border: 1px solid rgba(255,150,50,0.5); }
-.port-hold-track  { background: rgba(0,255,136,0.15);   color: var(--green);  border: 1px solid rgba(0,255,136,0.4); }
-.port-hold-recover{ background: rgba(255,209,102,0.12); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
-.port-danger      { background: rgba(255,77,109,0.15);  color: var(--red);    border: 1px solid rgba(255,77,109,0.5);
+.port-sell-now    { background: rgba(255,77,109,0.18);  color: var(--red);    border-left: 3px solid var(--red);    font-size: 16px; padding: 14px 12px; }
+.port-sell-soon   { background: rgba(255,209,102,0.15); color: var(--yellow); border-left: 3px solid var(--yellow); }
+.port-hold-track  { background: rgba(0,255,136,0.15);   color: var(--green);  border-left: 3px solid var(--green); }
+.port-hold-recover{ background: rgba(0,255,136,0.15);   color: var(--green);  border-left: 3px solid var(--green); }
+.port-danger      { background: rgba(255,77,109,0.15);  color: var(--red);    border-left: 3px solid var(--red);
                     animation: port-flash 1.5s ease-in-out infinite; }
 
 @keyframes port-flash {
@@ -799,20 +799,74 @@ a { color: var(--blue); }
   margin: 0 12px 10px;
   padding: 12px 14px;
 }
-.portfolio-card.in-profit  { border-left: 3px solid var(--green); }
-.portfolio-card.in-loss    { border-left: 3px solid var(--red); }
-.portfolio-card.breakeven  { border-left: 3px solid var(--yellow); }
-.pf-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
 .pf-meta { font-size: 11px; color: var(--muted); margin: 4px 0; }
-.pf-pnl {
-  font-family: var(--mono);
-  font-size: 16px;
-  font-weight: 600;
-  text-align: right;
+
+.pf-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+.pf-ticker { font-family: var(--cond); font-size: 22px; font-weight: 700; }
+.pf-company { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.pf-header-pnl { text-align: right; }
+.pf-pnl-dollar { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+.pf-pnl-pct { font-family: var(--mono); font-size: 13px; font-weight: 600; margin-top: 2px; }
+.pf-pnl-dollar.pos, .pf-pnl-pct.pos { color: var(--green); }
+.pf-pnl-dollar.neg, .pf-pnl-pct.neg { color: var(--red); }
+
+.pf-price-bar {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.03);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-bottom: 8px;
 }
-.pf-pnl.pos { color: var(--green); }
-.pf-pnl.neg { color: var(--red); }
+.pf-bar-profit { background: rgba(0,255,136,0.08); }
+.pf-bar-loss   { background: rgba(255,209,102,0.08); }
+.pf-price-cell { flex: 1; text-align: center; }
+.pf-price-divider { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+.pf-price-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 2px; }
+.pf-price-val { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.pf-muted  { color: var(--muted); }
+.pf-yellow { color: var(--yellow); }
+.pf-red    { color: var(--red); }
+.pf-now-up   { color: var(--green); }
+.pf-now-down { color: var(--red); }
+.pf-now-flat { color: var(--yellow); }
+
+.pf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+.pf-grid-cell {
+  padding: 8px 10px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.pf-grid-cell:nth-child(2n) { border-right: none; }
+.pf-grid-cell:nth-last-child(-n+2) { border-bottom: none; }
+.pf-grid-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 3px; }
+.pf-grid-val { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+.pf-score-label { font-family: var(--cond); font-size: 11px; font-weight: 700; }
+.pf-score-green { color: var(--green); }
+.pf-score-yellow { color: var(--yellow); }
+.pf-score-na { color: var(--muted); }
+
+.pf-duration { margin-bottom: 8px; }
+.pf-duration-row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+.pf-duration-track { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; }
+.pf-duration-fill { height: 100%; border-radius: 2px; }
+.pf-dur-blue   { color: var(--blue); }
+.pf-dur-orange { color: var(--orange); }
+.pf-dur-red    { color: var(--red); }
+.pf-duration-fill.pf-dur-blue   { background: var(--blue); }
+.pf-duration-fill.pf-dur-orange { background: var(--orange); }
+.pf-duration-fill.pf-dur-red    { background: var(--red); }
+
 .pf-actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.pf-actions .btn { flex: 1; justify-content: center; }
+.pf-actions .btn-ghost { color: var(--blue); border: 1px solid rgba(0,180,216,0.35); }
 
 /* ── Watchlist Card ── */
 .wl-card {
@@ -1372,20 +1426,6 @@ input:checked + .toggle-slider::before { transform: translateX(20px); }
   color: var(--red);
   border-color: rgba(255,77,109,0.35);
 }
-
-/* ── Portfolio Price Track ── */
-.pf-price-track {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 600;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  margin-bottom: 8px;
-  letter-spacing: 0.2px;
-}
-.pf-track-up   { background: rgba(0,255,136,0.12); color: var(--green);  border: 1px solid rgba(0,255,136,0.3); }
-.pf-track-down { background: rgba(255,77,109,0.12); color: var(--red);   border: 1px solid rgba(255,77,109,0.3); }
-.pf-track-flat { background: rgba(255,209,102,0.1); color: var(--yellow); border: 1px solid rgba(255,209,102,0.3); }
 
 /* ── Momentum Protection Indicator ── */
 .pf-momentum {
