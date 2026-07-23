@@ -619,10 +619,11 @@ let state = {
   lastPassedCount: 0,
   selectedUniverse: 'OTHER',
   notifications: {},     // push notification state — persisted
+  ownedScores: {},        // ticker → {score, label} snapshotted at each screener run, for owned positions that no longer clear the display threshold — persisted
 };
 
 function loadState() {
-  ['settings','portfolio','sold','signals','lastScanTime','news','signalToggles','lastPassedCount','selectedUniverse','notifications'].forEach(k => {
+  ['settings','portfolio','sold','signals','lastScanTime','news','signalToggles','lastPassedCount','selectedUniverse','notifications','ownedScores'].forEach(k => {
     const raw = localStorage.getItem('edge_' + k);
     if (raw) { try { state[k] = JSON.parse(raw); } catch(e) {} }
   });
@@ -1796,6 +1797,13 @@ async function runScreener() {
       const bars = allBars[ticker] || [];
       const s = scoreStock(ticker, snap, bars, newsMap[ticker] || null, spyChangePct, category);
       if (s) s.thresholdAtBuy = displayThreshold;
+      // Owned positions often drift below the display threshold over time and
+      // would otherwise never make it into state.signals — snapshot their score
+      // here, before the threshold/price filters below can drop them, so the
+      // Portfolio tab's Score Now always reflects the most recent scan.
+      if (s && getOwnedPosition(ticker)) {
+        state.ownedScores[ticker] = { score: s.score, label: s.signal };
+      }
       return s;
     }).filter(s => s && s.score >= displayThreshold);
 
@@ -1807,7 +1815,7 @@ async function runScreener() {
 
     state.signals.sort((a,b) => b.score - a.score);
     state.lastScanTime = Date.now();
-    persist('signals'); persist('lastScanTime');
+    persist('signals'); persist('lastScanTime'); persist('ownedScores');
     state.news = newsItems;
     persist('news');
 
@@ -3104,12 +3112,18 @@ async function renderPortfolioTab() {
     const scoreBuyLabel = p.scoreAtBuy >= 80 ? 'STRONG BUY' : p.scoreAtBuy >= 50 ? 'SOFT BUY' : 'WATCH';
     const scoreBuyCls   = p.scoreAtBuy >= 80 ? 'pf-score-green' : 'pf-score-yellow';
 
-    // Score now — only available if this ticker is still present in the most
-    // recent Signals scan (state.signals); there's no fresh re-score without
-    // rerunning that scan, so otherwise show a placeholder.
+    // Score now — state.ownedScores is snapshotted every screener run for owned
+    // tickers specifically (see runScreener), even when they no longer clear the
+    // display threshold and so don't appear in state.signals. Fall back to
+    // state.signals for the rare case ownedScores hasn't been populated yet
+    // (e.g. a position added before this cache existed), else show a placeholder.
+    const ownedScore = state.ownedScores[p.ticker];
     const liveSignal = state.signals.find(s => s.ticker === p.ticker);
-    const scoreNowDisplay = liveSignal
-      ? `${liveSignal.score} <span class="pf-score-label ${liveSignal.score >= 80 ? 'pf-score-green' : 'pf-score-yellow'}">${liveSignal.signal}</span>`
+    const nowScore = ownedScore
+      ? ownedScore
+      : liveSignal ? { score: liveSignal.score, label: liveSignal.signal } : null;
+    const scoreNowDisplay = nowScore
+      ? `${nowScore.score} <span class="pf-score-label ${nowScore.score >= 80 ? 'pf-score-green' : 'pf-score-yellow'}">${nowScore.label}</span>`
       : `<span class="pf-score-na">—</span>`;
 
     // Duration urgency — same maxHoldDays map used for the card sort order above.
